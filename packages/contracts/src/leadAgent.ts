@@ -1,5 +1,7 @@
 import * as Schema from "effect/Schema";
 
+import { ProjectId } from "./baseSchemas.ts";
+
 export const LeadAgentConversationEntry = Schema.Struct({
   source: Schema.Literals(["owner", "lead-agent"]),
   content: Schema.String,
@@ -149,11 +151,17 @@ export const LeadAgentStreamEvent = Schema.Union([
 export type LeadAgentStreamEvent = typeof LeadAgentStreamEvent.Type;
 
 export const LeadAgentCompleteTurnInput = Schema.Struct({
+  projectId: ProjectId,
   content: Schema.String.check(
     Schema.makeFilter((content) => content.trim().length > 0 || "Owner turn cannot be blank"),
   ),
 });
 export type LeadAgentCompleteTurnInput = typeof LeadAgentCompleteTurnInput.Type;
+
+export const LeadAgentSubscriptionInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type LeadAgentSubscriptionInput = typeof LeadAgentSubscriptionInput.Type;
 
 export const LeadAgentResponse = Schema.Struct({
   source: Schema.Literals(["Lead Agent", "Session View"]),
@@ -162,6 +170,8 @@ export const LeadAgentResponse = Schema.Struct({
 export type LeadAgentResponse = typeof LeadAgentResponse.Type;
 
 export const LeadAgentFailureReason = Schema.Literals([
+  "project-not-found",
+  "project-path-unresolved",
   "spawn-failed",
   "handshake-timeout",
   "protocol-failed",

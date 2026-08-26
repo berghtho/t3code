@@ -4,31 +4,41 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { connect, RikerOwnerGatewayError } from "./RikerOwnerGateway.ts";
+import { connect, RikerOwnerGatewayError, targetProjectPathsEqual } from "./RikerOwnerGateway.ts";
 
 const encoder = new TextEncoder();
+const targetProjectPath = "C:\\work\\target";
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const OwnerTurnCommand = Schema.Struct({
+  type: Schema.Literal("turn"),
+  id: Schema.String,
+  content: Schema.String,
+});
+const decodeOwnerTurnCommand = Schema.decodeUnknownSync(Schema.fromJsonString(OwnerTurnCommand));
 
 function makeGatewayProcess(
   onCommand: (command: unknown) => Effect.Effect<void>,
-  readyProtocolVersion = 1,
+  readyProtocolVersion = 2,
+  readyTargetProjectPath = targetProjectPath,
 ) {
   return Effect.gen(function* () {
     const output = yield* Queue.unbounded<Uint8Array>();
     const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
     const writes: Array<unknown> = [];
     const offer = (message: unknown) =>
-      Queue.offer(output, encoder.encode(`${JSON.stringify(message)}\n`)).pipe(Effect.asVoid);
+      Queue.offer(output, encoder.encode(`${encodeUnknownJson(message)}\n`)).pipe(Effect.asVoid);
 
     yield* offer({
       type: "ready",
       protocolVersion: readyProtocolVersion,
       childPid: 77,
       snapshot: {
-        targetProjectPath: "C:\\work\\target",
+        targetProjectPath: readyTargetProjectPath,
         ownerSessionRevision: 1,
         leadState: "available",
         conversation: [],
@@ -43,7 +53,7 @@ function makeGatewayProcess(
       unref: Effect.succeed(Effect.void),
       stdin: Sink.forEach((chunk: Uint8Array) =>
         Effect.gen(function* () {
-          const command = JSON.parse(new TextDecoder().decode(chunk)) as unknown;
+          const command = decodeOwnerTurnCommand(new TextDecoder().decode(chunk));
           writes.push(command);
           yield* onCommand(command);
         }),
@@ -92,7 +102,7 @@ describe("RikerOwnerGateway", () => {
           }),
         );
 
-        const connection = yield* connect().pipe(
+        const connection = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
         );
@@ -117,7 +127,7 @@ describe("RikerOwnerGateway", () => {
         ]);
         expect(spawned).toHaveLength(1);
         expect(spawned[0]?.command).toBe("riker");
-        expect(spawned[0]?.args).toEqual(["gateway"]);
+        expect(spawned[0]?.args).toEqual(["gateway", "--project", targetProjectPath]);
         expect(spawned[0]?.options).toMatchObject({
           shell: false,
           stdin: { stream: "pipe", endOnDone: false },
@@ -132,10 +142,10 @@ describe("RikerOwnerGateway", () => {
   it.effect("rejects an incompatible Owner Gateway protocol before returning a connection", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const gateway = yield* makeGatewayProcess(() => Effect.void, 2);
+        const gateway = yield* makeGatewayProcess(() => Effect.void, 1);
         const spawner = ChildProcessSpawner.make(() => Effect.succeed(gateway.handle));
 
-        const error = yield* connect().pipe(
+        const error = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
           Effect.flip,
@@ -144,9 +154,169 @@ describe("RikerOwnerGateway", () => {
         expect(error).toBeInstanceOf(RikerOwnerGatewayError);
         expect(error).toMatchObject({
           reason: "protocol-failed",
-          detail: "Riker Owner Gateway protocol 2 is incompatible with expected protocol 1.",
+          detail: "Riker Owner Gateway protocol 1 is incompatible with expected protocol 2.",
         });
         expect(yield* Deferred.isDone(gateway.exit)).toBe(true);
+      }),
+    ),
+  );
+
+  it("normalizes Windows casing, slash direction, and trailing separators", () => {
+    expect(targetProjectPathsEqual("C:\\Work\\Target", "c:\\work\\target", "win32")).toBe(true);
+    expect(targetProjectPathsEqual("C:\\Work\\Target\\", "c:/work/target/", "win32")).toBe(true);
+    expect(targetProjectPathsEqual("C:\\", "c:/", "win32")).toBe(true);
+    expect(targetProjectPathsEqual("/work/target/", "/work/target", "linux")).toBe(true);
+    expect(targetProjectPathsEqual("/Work/Target", "/work/target", "linux")).toBe(false);
+  });
+
+  it.effect("rejects a ready snapshot bound to another project", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gateway = yield* makeGatewayProcess(() => Effect.void, 2, "C:\\work\\different");
+        const spawner = ChildProcessSpawner.make(() => Effect.succeed(gateway.handle));
+
+        const error = yield* connect(targetProjectPath).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(HostProcessPlatform, "win32"),
+          Effect.flip,
+        );
+
+        expect(error).toMatchObject({
+          reason: "protocol-failed",
+          detail: "Riker Owner Gateway ready snapshot targeted a different project.",
+        });
+        expect(yield* Deferred.isDone(gateway.exit)).toBe(true);
+      }),
+    ),
+  );
+
+  it.effect(
+    "accepts Windows path casing but rejects a later conversation for another project",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const gateway = yield* makeGatewayProcess(() => Effect.void, 2, "c:/WORK/TARGET/");
+          const spawner = ChildProcessSpawner.make(() => Effect.succeed(gateway.handle));
+          const connection = yield* connect(targetProjectPath).pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provideService(HostProcessPlatform, "win32"),
+          );
+
+          yield* gateway.offer({
+            type: "event",
+            event: {
+              type: "conversation",
+              conversation: [],
+              targetProjectPath: "C:\\work\\different",
+              ownerSessionRevision: 2,
+              replaced: false,
+            },
+          });
+          const error = yield* connection.events.pipe(Stream.runDrain, Effect.flip);
+
+          expect(error).toMatchObject({
+            reason: "protocol-failed",
+            detail: "Riker Owner Gateway conversation event targeted a different project.",
+          });
+          expect(yield* Deferred.isDone(gateway.exit)).toBe(true);
+        }),
+      ),
+  );
+
+  it.effect("includes bounded redacted stderr when the gateway closes during handshake", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stderrConsumed = yield* Deferred.make<void>();
+        const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+        const diagnostic = `${"x".repeat(5_000)}\napi_key=super-secret\nModel configuration is invalid.`;
+        const handle = ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(12),
+          exitCode: Deferred.await(exit),
+          isRunning: Effect.succeed(true),
+          kill: () => Deferred.succeed(exit, ChildProcessSpawner.ExitCode(0)).pipe(Effect.asVoid),
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.unwrap(
+            Deferred.await(stderrConsumed).pipe(
+              Effect.as(Stream.empty as Stream.Stream<Uint8Array>),
+            ),
+          ),
+          stderr: Stream.make(encoder.encode(diagnostic)).pipe(
+            Stream.ensuring(Deferred.succeed(stderrConsumed, undefined)),
+          ),
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+        const spawner = ChildProcessSpawner.make(() => Effect.succeed(handle));
+
+        const error = yield* connect(targetProjectPath).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(HostProcessPlatform, "linux"),
+          Effect.flip,
+        );
+
+        expect(error.reason).toBe("stream-closed");
+        expect(error.detail).toContain("Model configuration is invalid.");
+        expect(error.detail).toContain("api_key=[redacted]");
+        expect(error.detail).not.toContain("super-secret");
+        expect(error.detail.length).toBeLessThan(4_300);
+      }),
+    ),
+  );
+
+  it.effect("includes available stderr when a ready gateway stream closes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stderrConsumed = yield* Deferred.make<void>();
+        const closeOutput = yield* Deferred.make<void>();
+        const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+        const readyRecord = encoder.encode(
+          `${encodeUnknownJson({
+            type: "ready",
+            protocolVersion: 2,
+            childPid: 77,
+            snapshot: {
+              targetProjectPath,
+              ownerSessionRevision: 1,
+              leadState: "available",
+              conversation: [],
+            },
+          })}\n`,
+        );
+        const handle = ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(12),
+          exitCode: Deferred.await(exit),
+          isRunning: Effect.succeed(true),
+          kill: () => Deferred.succeed(exit, ChildProcessSpawner.ExitCode(0)).pipe(Effect.asVoid),
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.concat(
+            Stream.make(readyRecord),
+            Stream.fromEffect(Deferred.await(closeOutput)).pipe(Stream.drain),
+          ),
+          stderr: Stream.make(encoder.encode("Gateway database is locked.")).pipe(
+            Stream.ensuring(Deferred.succeed(stderrConsumed, undefined)),
+          ),
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+        const spawner = ChildProcessSpawner.make(() => Effect.succeed(handle));
+        const connection = yield* connect(targetProjectPath).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(HostProcessPlatform, "linux"),
+        );
+
+        yield* Deferred.await(stderrConsumed);
+        yield* Deferred.succeed(closeOutput, undefined);
+        const error = yield* connection.events.pipe(Stream.runDrain, Effect.flip);
+
+        expect(error).toMatchObject({
+          reason: "stream-closed",
+          detail:
+            "Riker closed the Owner Gateway stream unexpectedly.\nRiker stderr (bounded): Gateway database is locked.",
+        });
       }),
     ),
   );
@@ -164,7 +334,7 @@ describe("RikerOwnerGateway", () => {
             return gateway.handle;
           }),
         );
-        const connection = yield* connect().pipe(
+        const connection = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
         );
@@ -189,7 +359,7 @@ describe("RikerOwnerGateway", () => {
             return gateway.handle;
           }),
         );
-        const connection = yield* connect().pipe(
+        const connection = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
         );
@@ -225,7 +395,7 @@ describe("RikerOwnerGateway", () => {
             return gateway.handle;
           }),
         );
-        const connection = yield* connect().pipe(
+        const connection = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
         );
@@ -276,7 +446,7 @@ describe("RikerOwnerGateway", () => {
             return gateway.handle;
           }),
         );
-        const connection = yield* connect().pipe(
+        const connection = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
         );

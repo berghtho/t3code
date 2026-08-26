@@ -4,6 +4,7 @@ import {
   LeadAgentResponse,
   LeadAgentSnapshot,
 } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -20,12 +21,13 @@ import * as Stream from "effect/Stream";
 import * as Ndjson from "effect/unstable/encoding/Ndjson";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-const OWNER_GATEWAY_PROTOCOL_VERSION = 1;
+const OWNER_GATEWAY_PROTOCOL_VERSION = 2;
 const HANDSHAKE_TIMEOUT = Duration.seconds(75);
+const STDERR_DIAGNOSTIC_LIMIT_BYTES = 4_096;
 
-export type OwnerGatewaySnapshot = typeof LeadAgentSnapshot.Type;
-export type OwnerGatewayEvent = typeof LeadAgentEvent.Type;
-export type OwnerGatewayResponse = typeof LeadAgentResponse.Type;
+export type OwnerGatewaySnapshot = LeadAgentSnapshot;
+export type OwnerGatewayEvent = LeadAgentEvent;
+export type OwnerGatewayResponse = LeadAgentResponse;
 
 const OwnerGatewayMessage = Schema.Union([
   Schema.Struct({
@@ -54,6 +56,12 @@ const OwnerGatewayMessage = Schema.Union([
   }),
 ]);
 
+const OwnerTurnCommand = Schema.Struct({
+  type: Schema.Literal("turn"),
+  id: Schema.String,
+  content: Schema.String,
+});
+
 export class RikerOwnerGatewayError extends Schema.TaggedErrorClass<RikerOwnerGatewayError>()(
   "RikerOwnerGatewayError",
   {
@@ -66,6 +74,8 @@ export class RikerOwnerGatewayError extends Schema.TaggedErrorClass<RikerOwnerGa
     return this.detail;
   }
 }
+
+const isRikerOwnerGatewayError = Schema.is(RikerOwnerGatewayError);
 
 export interface RikerOwnerGatewayConnection {
   readonly childPid: number;
@@ -80,32 +90,74 @@ export interface RikerOwnerGatewayConnection {
 export class RikerOwnerGateway extends Context.Service<
   RikerOwnerGateway,
   {
-    readonly connect: () => Effect.Effect<
-      RikerOwnerGatewayConnection,
-      RikerOwnerGatewayError,
-      Scope.Scope
-    >;
+    readonly connect: (
+      canonicalTargetProjectPath: string,
+    ) => Effect.Effect<RikerOwnerGatewayConnection, RikerOwnerGatewayError, Scope.Scope>;
   }
 >()("t3/riker/RikerOwnerGateway") {}
 
 const decodeOwnerGatewayMessage = Schema.decodeUnknownEffect(OwnerGatewayMessage);
 
-const gatewayError = (
-  reason: typeof LeadAgentFailureReason.Type,
-  detail: string,
-  cause?: unknown,
-) =>
+const gatewayError = (reason: LeadAgentFailureReason, detail: string, cause?: unknown) =>
   new RikerOwnerGatewayError({
     reason,
     detail,
     ...(cause === undefined ? {} : { cause }),
   });
 
+export function targetProjectPathsEqual(
+  requestedPath: string,
+  receivedPath: string,
+  platform: NodeJS.Platform,
+): boolean {
+  const normalize = (input: string) => {
+    const normalized = platform === "win32" ? input.replaceAll("/", "\\") : input;
+    const trailingSeparatorLength =
+      normalized.match(platform === "win32" ? /\\+$/ : /\/+$/)?.[0].length ?? 0;
+    const withoutTrailingSeparators =
+      trailingSeparatorLength === 0 ? normalized : normalized.slice(0, -trailingSeparatorLength);
+    const rootPreserved =
+      platform === "win32" && /^[a-z]:\\+$/i.test(normalized)
+        ? `${normalized.slice(0, 2)}\\`
+        : withoutTrailingSeparators.length > 0
+          ? withoutTrailingSeparators
+          : normalized.slice(0, 1);
+    return platform === "win32" ? rootPreserved.toLowerCase() : rootPreserved;
+  };
+  return normalize(requestedPath) === normalize(receivedPath);
+}
+
+function appendBoundedStderr(current: Uint8Array, chunk: Uint8Array): Uint8Array {
+  const incoming =
+    chunk.length > STDERR_DIAGNOSTIC_LIMIT_BYTES
+      ? chunk.slice(chunk.length - STDERR_DIAGNOSTIC_LIMIT_BYTES)
+      : chunk;
+  const retainedLength = Math.min(current.length, STDERR_DIAGNOSTIC_LIMIT_BYTES - incoming.length);
+  const combined = new Uint8Array(retainedLength + incoming.length);
+  combined.set(current.subarray(current.length - retainedLength));
+  combined.set(incoming, retainedLength);
+  return combined;
+}
+
+function sanitizeStderr(bytes: Uint8Array): string {
+  return new TextDecoder()
+    .decode(bytes)
+    .replace(/\bBearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(
+      /\b(token|secret|password|authorization|api[-_ ]?key)\s*[:=]\s*(?:"[^"]*"|'[^']*'|\S+)/gi,
+      "$1=[redacted]",
+    )
+    .replaceAll("\0", "")
+    .trim();
+}
+
 const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(function* (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+  canonicalTargetProjectPath: string,
 ) {
+  const platform = yield* HostProcessPlatform;
   const executable = "riker";
-  const args = ["gateway"];
+  const args = ["gateway", "--project", canonicalTargetProjectPath];
   const resolved = yield* resolveSpawnCommand(executable, args);
   const command = ChildProcess.make(resolved.command, resolved.args, {
     shell: resolved.shell,
@@ -136,32 +188,47 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
     Deferred.Deferred<OwnerGatewayResponse, RikerOwnerGatewayError>
   >();
   const nextTurnNumber = yield* Ref.make(1);
+  const stderr = yield* Ref.make<Uint8Array<ArrayBufferLike>>(new Uint8Array());
   const writeMutex = yield* Semaphore.make(1);
   let receivedReady = false;
   let terminalError: RikerOwnerGatewayError | undefined;
 
   yield* Effect.addFinalizer(() => Queue.shutdown(events));
 
+  const enrichWithStderr = Effect.fn("RikerOwnerGateway.enrichWithStderr")(function* (
+    error: RikerOwnerGatewayError,
+  ) {
+    if (receivedReady && error.reason !== "stream-closed") return error;
+    const diagnostic = sanitizeStderr(yield* Ref.get(stderr));
+    if (diagnostic.length === 0) return error;
+    return gatewayError(
+      error.reason,
+      `${error.detail}\nRiker stderr (bounded): ${diagnostic}`,
+      error.cause,
+    );
+  });
+
   const failConnection = Effect.fn("RikerOwnerGateway.failConnection")(function* (
     error: RikerOwnerGatewayError,
   ) {
     return yield* Effect.uninterruptible(
       Effect.gen(function* () {
+        const terminalFailure = yield* enrichWithStderr(error);
         const claimed = yield* Effect.sync(() => {
           if (terminalError) return false;
-          terminalError = error;
+          terminalError = terminalFailure;
           return true;
         });
         if (!claimed) return yield* Deferred.await(terminalCleanup);
 
-        yield* Deferred.fail(terminal, error);
-        yield* Queue.offer(events, { _tag: "failure", error });
+        yield* Deferred.fail(terminal, terminalFailure);
+        yield* Queue.offer(events, { _tag: "failure", error: terminalFailure });
         yield* handle.kill({ forceKillAfter: Duration.seconds(5) }).pipe(Effect.ignore);
         yield* writeMutex.withPermits(1)(
           Effect.gen(function* () {
             const pending = Array.from(pendingTurns.values());
             pendingTurns.clear();
-            yield* Effect.forEach(pending, (response) => Deferred.fail(response, error), {
+            yield* Effect.forEach(pending, (response) => Deferred.fail(response, terminalFailure), {
               discard: true,
             });
           }),
@@ -192,16 +259,41 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
             "Riker emitted more than one Owner Gateway ready record.",
           );
         }
-        receivedReady = true;
         if (message.protocolVersion !== OWNER_GATEWAY_PROTOCOL_VERSION) {
           return yield* gatewayError(
             "protocol-failed",
             `Riker Owner Gateway protocol ${message.protocolVersion} is incompatible with expected protocol ${OWNER_GATEWAY_PROTOCOL_VERSION}.`,
           );
         }
+        if (
+          !targetProjectPathsEqual(
+            canonicalTargetProjectPath,
+            message.snapshot.targetProjectPath,
+            platform,
+          )
+        ) {
+          return yield* gatewayError(
+            "protocol-failed",
+            "Riker Owner Gateway ready snapshot targeted a different project.",
+          );
+        }
+        receivedReady = true;
         yield* Deferred.succeed(ready, message);
         return;
       case "event":
+        if (
+          message.event.type === "conversation" &&
+          !targetProjectPathsEqual(
+            canonicalTargetProjectPath,
+            message.event.targetProjectPath,
+            platform,
+          )
+        ) {
+          return yield* gatewayError(
+            "protocol-failed",
+            "Riker Owner Gateway conversation event targeted a different project.",
+          );
+        }
         yield* Queue.offer(events, { _tag: "event", event: message.event });
         if (message.event.type === "exit") {
           return yield* gatewayError(
@@ -239,6 +331,13 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
     }
   });
 
+  yield* handle.stderr.pipe(
+    Stream.runForEach((chunk) =>
+      Ref.update(stderr, (current) => appendBoundedStderr(current, chunk)),
+    ),
+    Effect.ignore,
+    Effect.forkScoped,
+  );
   yield* handle.stdout.pipe(
     Stream.pipeThroughChannel(Ndjson.decode({ ignoreEmptyLines: true })),
     Stream.runForEach(processMessage),
@@ -249,14 +348,13 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
     ),
     Effect.catch((cause) =>
       failConnection(
-        cause instanceof RikerOwnerGatewayError
+        isRikerOwnerGatewayError(cause)
           ? cause
           : gatewayError("protocol-failed", "Failed to read Riker Owner Gateway output.", cause),
       ),
     ),
     Effect.forkScoped,
   );
-  yield* handle.stderr.pipe(Stream.runDrain, Effect.ignore, Effect.forkScoped);
 
   const readyMessage = yield* Effect.raceFirst(
     Deferred.await(ready),
@@ -275,7 +373,7 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
         onSome: Effect.succeed,
       }),
     ),
-    Effect.tapError(failConnection),
+    Effect.catch((error) => failConnection(error).pipe(Effect.andThen(Deferred.await(terminal)))),
   );
 
   const completeTurn = Effect.fn("RikerOwnerGateway.completeTurn")(function* (content: string) {
@@ -291,12 +389,14 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
       .withPermits(1)(
         Effect.gen(function* () {
           if (terminalError) {
-            return yield* Effect.fail(terminalError);
+            return yield* terminalError;
           }
 
           pendingTurns.set(id, response);
           yield* Stream.run(
-            Stream.encodeText(Stream.make(`${JSON.stringify({ type: "turn", id, content })}\n`)),
+            Stream.make({ type: "turn" as const, id, content }).pipe(
+              Stream.pipeThroughChannel(Ndjson.encodeSchema(OwnerTurnCommand)()),
+            ),
             handle.stdin,
           ).pipe(
             Effect.mapError((cause) =>
@@ -344,15 +444,18 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
   } satisfies RikerOwnerGatewayConnection;
 });
 
-export const connect = Effect.fn("RikerOwnerGateway.connect")(function* () {
+export const connect = Effect.fn("RikerOwnerGateway.connect")(function* (
+  canonicalTargetProjectPath: string,
+) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  return yield* connectWithSpawner(spawner);
+  return yield* connectWithSpawner(spawner, canonicalTargetProjectPath);
 });
 
 export const make = Effect.fn("RikerOwnerGateway.make")(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return RikerOwnerGateway.of({
-    connect: () => connectWithSpawner(spawner),
+    connect: (canonicalTargetProjectPath) =>
+      connectWithSpawner(spawner, canonicalTargetProjectPath),
   });
 });
 

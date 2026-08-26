@@ -1,19 +1,39 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { LeadAgentCompleteTurnInput, LeadAgentError, LeadAgentStreamEvent } from "./leadAgent.ts";
+import {
+  LeadAgentCompleteTurnInput,
+  LeadAgentError,
+  LeadAgentStreamEvent,
+  LeadAgentSubscriptionInput,
+} from "./leadAgent.ts";
 
 const decodeCompleteTurnInput = Schema.decodeUnknownSync(LeadAgentCompleteTurnInput);
+const decodeSubscriptionInput = Schema.decodeUnknownSync(LeadAgentSubscriptionInput);
 const decodeStreamEvent = Schema.decodeUnknownSync(LeadAgentStreamEvent);
 const decodeLeadAgentError = Schema.decodeUnknownSync(LeadAgentError);
 
 describe("Lead Agent contracts", () => {
   it("preserves protocol-valid Owner turns", () => {
-    expect(decodeCompleteTurnInput({ content: "  Continue.  " })).toEqual({
-      content: "  Continue.  ",
+    expect(decodeCompleteTurnInput({ projectId: " project-1 ", content: "  Continue.  " })).toEqual(
+      {
+        projectId: "project-1",
+        content: "  Continue.  ",
+      },
+    );
+    expect(() => decodeCompleteTurnInput({ projectId: "project-1", content: "   " })).toThrow();
+    expect(() => decodeCompleteTurnInput({ projectId: "project-1", content: "" })).toThrow();
+    expect(() =>
+      decodeCompleteTurnInput({ workspaceRoot: "/client/path", content: "Continue." }),
+    ).toThrow();
+  });
+
+  it("requires a branded project id for Lead Agent subscriptions", () => {
+    expect(decodeSubscriptionInput({ projectId: " project-1 " })).toEqual({
+      projectId: "project-1",
     });
-    expect(() => decodeCompleteTurnInput({ content: "   " })).toThrow();
-    expect(() => decodeCompleteTurnInput({ content: "" })).toThrow();
+    expect(() => decodeSubscriptionInput({ projectId: "   " })).toThrow();
+    expect(() => decodeSubscriptionInput({ workspaceRoot: "/client/path" })).toThrow();
   });
 
   it("decodes snapshot stream events and typed failures", () => {

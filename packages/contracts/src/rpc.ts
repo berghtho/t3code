@@ -63,6 +63,7 @@ import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   LeadAgentCompleteTurnInput,
   LeadAgentError,
+  LeadAgentSubscriptionInput,
   LeadAgentResponse,
   LeadAgentStreamEvent,
 } from "./leadAgent.ts";
@@ -350,7 +351,7 @@ export const WsLeadAgentCompleteTurnRpc = Rpc.make(WS_METHODS.leadAgentCompleteT
 });
 
 export const WsSubscribeLeadAgentRpc = Rpc.make(WS_METHODS.subscribeLeadAgent, {
-  payload: Schema.Struct({}),
+  payload: LeadAgentSubscriptionInput,
   success: LeadAgentStreamEvent,
   error: Schema.Union([LeadAgentError, EnvironmentAuthorizationError]),
   stream: true,

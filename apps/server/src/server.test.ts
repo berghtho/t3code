@@ -623,7 +623,7 @@ const buildAppUnderTest = (options?: {
       LeadAgentBridge.LeadAgentBridge,
       LeadAgentBridge.LeadAgentBridge.of({
         completeTurn: () => Effect.die("Lead Agent is not stubbed in this test"),
-        subscribe: Effect.succeed(Stream.never),
+        subscribe: () => Effect.succeed(Stream.never),
         ...options?.layers?.leadAgent,
       }),
     );
@@ -4631,30 +4631,57 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
   it.effect("routes the Lead Agent snapshot, events, and Owner turns over websocket rpc", () =>
     Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-lead-agent-websocket-",
+      });
+      const canonicalWorkspaceRoot = yield* fileSystem.realPath(workspaceRoot);
+      const requestedPaths: Array<string> = [];
       yield* buildAppUnderTest({
         layers: {
-          leadAgent: {
-            completeTurn: (content) =>
-              Effect.succeed({ source: "Lead Agent", content: `Received: ${content}` }),
-            subscribe: Effect.succeed(
-              Stream.make(
-                {
-                  version: 1,
-                  type: "snapshot",
-                  snapshot: {
-                    targetProjectPath: "C:\\work\\target",
-                    ownerSessionRevision: 1,
-                    leadState: "available",
-                    conversation: [],
-                  },
-                },
-                {
-                  version: 1,
-                  type: "event",
-                  event: { type: "lead-state", state: "responding" },
-                },
+          projectionSnapshotQuery: {
+            getProjectShellById: (projectId) =>
+              Effect.succeed(
+                projectId === defaultProjectId
+                  ? Option.some({
+                      id: defaultProjectId,
+                      title: "Lead Agent Project",
+                      workspaceRoot: `${workspaceRoot}/.`,
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: "2026-01-01T00:00:00.000Z",
+                      updatedAt: "2026-01-01T00:00:00.000Z",
+                    })
+                  : Option.none(),
               ),
-            ),
+          },
+          leadAgent: {
+            completeTurn: (canonicalTargetPath, content) => {
+              requestedPaths.push(canonicalTargetPath);
+              return Effect.succeed({ source: "Lead Agent", content: `Received: ${content}` });
+            },
+            subscribe: (canonicalTargetPath) => {
+              requestedPaths.push(canonicalTargetPath);
+              return Effect.succeed(
+                Stream.make(
+                  {
+                    version: 1,
+                    type: "snapshot",
+                    snapshot: {
+                      targetProjectPath: canonicalTargetPath,
+                      ownerSessionRevision: 1,
+                      leadState: "available",
+                      conversation: [],
+                    },
+                  },
+                  {
+                    version: 1,
+                    type: "event",
+                    event: { type: "lead-state", state: "responding" },
+                  },
+                ),
+              );
+            },
           },
         },
       });
@@ -4663,12 +4690,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const result = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           Effect.all({
-            events: client[WS_METHODS.subscribeLeadAgent]({}).pipe(
+            events: client[WS_METHODS.subscribeLeadAgent]({ projectId: defaultProjectId }).pipe(
               Stream.take(2),
               Stream.runCollect,
               Effect.map(Array.from),
             ),
-            response: client[WS_METHODS.leadAgentCompleteTurn]({ content: "Continue." }),
+            response: client[WS_METHODS.leadAgentCompleteTurn]({
+              projectId: defaultProjectId,
+              content: "Continue.",
+            }),
           }),
         ),
       );
@@ -4678,7 +4708,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           version: 1,
           type: "snapshot",
           snapshot: {
-            targetProjectPath: "C:\\work\\target",
+            targetProjectPath: canonicalWorkspaceRoot,
             ownerSessionRevision: 1,
             leadState: "available",
             conversation: [],
@@ -4694,6 +4724,29 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         source: "Lead Agent",
         content: "Received: Continue.",
       });
+      assert.deepStrictEqual(requestedPaths, [canonicalWorkspaceRoot, canonicalWorkspaceRoot]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("returns a typed Lead Agent failure for an unavailable project", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.leadAgentCompleteTurn]({
+            projectId: defaultProjectId,
+            content: "Continue.",
+          }).pipe(Effect.flip),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "LeadAgentError");
+      if (error._tag === "LeadAgentError") {
+        assert.strictEqual(error.reason, "project-not-found");
+        assert.strictEqual(error.message, "The requested Lead Agent project is unavailable.");
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

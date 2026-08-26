@@ -121,6 +121,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as LeadAgentBridge from "./riker/LeadAgentBridge.ts";
+import { resolveLeadAgentProjectPath } from "./riker/LeadAgentProjectResolver.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -1608,7 +1609,11 @@ const makeWsRpcLayer = (
         [WS_METHODS.leadAgentCompleteTurn]: (input) =>
           observeRpcEffect(
             WS_METHODS.leadAgentCompleteTurn,
-            leadAgent.completeTurn(input.content),
+            resolveLeadAgentProjectPath(input.projectId).pipe(
+              Effect.flatMap((canonicalWorkspaceRoot) =>
+                leadAgent.completeTurn(canonicalWorkspaceRoot, input.content),
+              ),
+            ),
             { "rpc.aggregate": "lead-agent" },
           ),
         [WS_METHODS.serverUpdateProvider]: (input) =>
@@ -2461,10 +2466,18 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
-        [WS_METHODS.subscribeLeadAgent]: (_input) =>
-          observeRpcStreamEffect(WS_METHODS.subscribeLeadAgent, leadAgent.subscribe, {
-            "rpc.aggregate": "lead-agent",
-          }),
+        [WS_METHODS.subscribeLeadAgent]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.subscribeLeadAgent,
+            resolveLeadAgentProjectPath(input.projectId).pipe(
+              Effect.flatMap((canonicalWorkspaceRoot) =>
+                leadAgent.subscribe(canonicalWorkspaceRoot),
+              ),
+            ),
+            {
+              "rpc.aggregate": "lead-agent",
+            },
+          ),
       });
     }),
   );
