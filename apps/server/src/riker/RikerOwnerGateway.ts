@@ -170,7 +170,7 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
       .spawn(command)
       .pipe(
         Effect.mapError((cause) =>
-          gatewayError("spawn-failed", `Failed to start '${executable} ${args.join(" ")}'.`, cause),
+          gatewayError("spawn-failed", `Failed to start the '${executable}' Owner Gateway.`, cause),
         ),
       ),
     (child) => child.kill({ forceKillAfter: Duration.seconds(5) }).pipe(Effect.ignore),
