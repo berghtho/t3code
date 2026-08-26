@@ -120,6 +120,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as LeadAgentBridge from "./riker/LeadAgentBridge.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -477,6 +478,7 @@ const makeWsRpcLayer = (
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
+      const leadAgent = yield* LeadAgentBridge.LeadAgentBridge;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -1603,6 +1605,12 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "provider" },
           ),
+        [WS_METHODS.leadAgentCompleteTurn]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.leadAgentCompleteTurn,
+            leadAgent.completeTurn(input.content),
+            { "rpc.aggregate": "lead-agent" },
+          ),
         [WS_METHODS.serverUpdateProvider]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateProvider,
@@ -2453,6 +2461,10 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
+        [WS_METHODS.subscribeLeadAgent]: (_input) =>
+          observeRpcStreamEffect(WS_METHODS.subscribeLeadAgent, leadAgent.subscribe, {
+            "rpc.aggregate": "lead-agent",
+          }),
       });
     }),
   );

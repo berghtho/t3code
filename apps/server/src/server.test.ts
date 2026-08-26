@@ -157,6 +157,7 @@ import * as NativeTelemetryClient from "./resourceTelemetry/NativeTelemetryClien
 import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as LeadAgentBridge from "./riker/LeadAgentBridge.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as Data from "effect/Data";
 
@@ -429,6 +430,7 @@ const buildAppUnderTest = (options?: {
     desktopTelemetryReceiver?: Partial<
       DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"]
     >;
+    leadAgent?: Partial<LeadAgentBridge.LeadAgentBridge["Service"]>;
   };
 }) =>
   Effect.gen(function* () {
@@ -616,6 +618,14 @@ const buildAppUnderTest = (options?: {
     );
     const serviceLauncherClientLayer = ServiceLauncherClient.layer.pipe(
       Layer.provide(Layer.succeed(HostProcessEnvironment, {})),
+    );
+    const leadAgentLayer = Layer.succeed(
+      LeadAgentBridge.LeadAgentBridge,
+      LeadAgentBridge.LeadAgentBridge.of({
+        completeTurn: () => Effect.die("Lead Agent is not stubbed in this test"),
+        subscribe: Effect.succeed(Stream.never),
+        ...options?.layers?.leadAgent,
+      }),
     );
 
     const servedRoutesLayer = HttpRouter.serve(
@@ -982,7 +992,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(layerConfig),
     );
 
-    yield* Layer.build(appLayer);
+    yield* Layer.build(appLayer).pipe(Effect.provide(leadAgentLayer));
     return config;
   });
 
@@ -4616,6 +4626,74 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.strictEqual(error.message, `Failed to upload feedback for thread ${threadId}.`);
         assert.isDefined(error.cause);
       }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes the Lead Agent snapshot, events, and Owner turns over websocket rpc", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          leadAgent: {
+            completeTurn: (content) =>
+              Effect.succeed({ source: "Lead Agent", content: `Received: ${content}` }),
+            subscribe: Effect.succeed(
+              Stream.make(
+                {
+                  version: 1,
+                  type: "snapshot",
+                  snapshot: {
+                    targetProjectPath: "C:\\work\\target",
+                    ownerSessionRevision: 1,
+                    leadState: "available",
+                    conversation: [],
+                  },
+                },
+                {
+                  version: 1,
+                  type: "event",
+                  event: { type: "lead-state", state: "responding" },
+                },
+              ),
+            ),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all({
+            events: client[WS_METHODS.subscribeLeadAgent]({}).pipe(
+              Stream.take(2),
+              Stream.runCollect,
+              Effect.map(Array.from),
+            ),
+            response: client[WS_METHODS.leadAgentCompleteTurn]({ content: "Continue." }),
+          }),
+        ),
+      );
+
+      assert.deepStrictEqual(result.events, [
+        {
+          version: 1,
+          type: "snapshot",
+          snapshot: {
+            targetProjectPath: "C:\\work\\target",
+            ownerSessionRevision: 1,
+            leadState: "available",
+            conversation: [],
+          },
+        },
+        {
+          version: 1,
+          type: "event",
+          event: { type: "lead-state", state: "responding" },
+        },
+      ]);
+      assert.deepStrictEqual(result.response, {
+        source: "Lead Agent",
+        content: "Received: Continue.",
+      });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
