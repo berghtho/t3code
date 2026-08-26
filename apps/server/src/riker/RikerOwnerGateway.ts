@@ -191,13 +191,19 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
 
   yield* Effect.addFinalizer(() => Queue.shutdown(events));
 
-  const recordStderrDiagnostic = Effect.fn("RikerOwnerGateway.recordStderrDiagnostic")(function* (
+  const recordFailureDiagnostic = Effect.fn("RikerOwnerGateway.recordFailureDiagnostic")(function* (
     error: RikerOwnerGatewayError,
   ) {
-    if (receivedReady && error.reason !== "stream-closed") return error;
-    const diagnostic = sanitizeStderr(yield* Ref.get(stderr));
-    if (diagnostic.length === 0) return error;
-    yield* Effect.logWarning(`Riker Owner Gateway stderr (bounded): ${diagnostic}`, {
+    const diagnostic =
+      receivedReady && error.reason !== "stream-closed"
+        ? ""
+        : sanitizeStderr(yield* Ref.get(stderr));
+    const message =
+      diagnostic.length === 0
+        ? "Riker Owner Gateway connection failed."
+        : `Riker Owner Gateway connection failed. Stderr (bounded): ${diagnostic}`;
+    yield* Effect.logWarning(message, {
+      cause: error,
       reason: error.reason,
     });
     return error;
@@ -208,13 +214,13 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
   ) {
     return yield* Effect.uninterruptible(
       Effect.gen(function* () {
-        const terminalFailure = yield* recordStderrDiagnostic(error);
         const claimed = yield* Effect.sync(() => {
           if (terminalError) return false;
-          terminalError = terminalFailure;
+          terminalError = error;
           return true;
         });
         if (!claimed) return yield* Deferred.await(terminalCleanup);
+        const terminalFailure = yield* recordFailureDiagnostic(error);
 
         yield* Deferred.fail(terminal, terminalFailure);
         yield* Queue.offer(events, { _tag: "failure", error: terminalFailure });

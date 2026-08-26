@@ -357,6 +357,8 @@ describe("RikerOwnerGateway", () => {
   it.effect("fails pending and future turns when the protocol terminates", () =>
     Effect.scoped(
       Effect.gen(function* () {
+        const messages: string[] = [];
+        const logger = Logger.make(({ message }) => messages.push(JSON.stringify(message)));
         let gateway: Effect.Success<ReturnType<typeof makeGatewayProcess>> | undefined;
         const spawner = ChildProcessSpawner.make(() =>
           Effect.gen(function* () {
@@ -369,6 +371,7 @@ describe("RikerOwnerGateway", () => {
         const connection = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
+          Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
         );
 
         const firstError = yield* connection.completeTurn("First turn").pipe(Effect.flip);
@@ -382,6 +385,7 @@ describe("RikerOwnerGateway", () => {
         });
         expect(eventError).toEqual(firstError);
         expect(secondError).toEqual(firstError);
+        expect(messages.join("\n")).toContain("Malformed Owner turn.");
         expect(gateway?.writes).toHaveLength(1);
       }),
     ),
