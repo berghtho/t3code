@@ -10,6 +10,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 - [Thread timeline](#thread-timeline)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
+- [External Lead Agent](#external-lead-agent)
 - [Checkpointing](#checkpointing)
 
 ## Concepts
@@ -120,6 +121,25 @@ A point-in-time view of state. The word is used in multiple layers, including or
 
 The per-driver list of current model slugs that decides which models land in the model picker's legacy section. Bundled at `apps/server/src/provider/model-manifest.json` and refreshed at runtime from the same file on `main`, so classification updates ship as commits instead of releases. See the [provider architecture][16] model manifest section.
 
+### External Lead Agent
+
+#### Lead Agent
+
+The persistent CMD Riker agent that owns its conversation and coordinates delegated work. T3 Code is
+a presentation client for this integration, not the Lead Agent's orchestration authority. See
+[the external Lead Agent architecture][25].
+
+#### Owner
+
+The person directing the external Lead Agent. This term is specific to the CMD Riker boundary; T3's
+general product language continues to use "user."
+
+#### Session View
+
+A presentation-safe snapshot of Lead Agent availability, delegated work, and notices. It is observed
+through T3 but remains projected by CMD Riker and contains no internal workflow identifiers. See
+[the Lead Agent contracts][26].
+
 ### Checkpointing
 
 Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
@@ -156,6 +176,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 
 - [Architecture overview][24]
 - [Provider architecture][16]
+- [External Lead Agent][25]
 - [Permission modes][18]
 - [Workspace layout][2]
 
@@ -183,3 +204,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ./lead-agent.md
+[26]: ../../packages/contracts/src/leadAgent.ts

@@ -61,6 +61,13 @@ import {
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
+  LeadAgentCompleteTurnInput,
+  LeadAgentError,
+  LeadAgentSubscriptionInput,
+  LeadAgentResponse,
+  LeadAgentStreamEvent,
+} from "./leadAgent.ts";
+import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -229,6 +236,9 @@ export const WS_METHODS = {
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
 
+  // Lead Agent methods
+  leadAgentCompleteTurn: "leadAgent.completeTurn",
+
   // VCS methods
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
@@ -331,7 +341,21 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeLeadAgent: "subscribeLeadAgent",
 } as const;
+
+export const WsLeadAgentCompleteTurnRpc = Rpc.make(WS_METHODS.leadAgentCompleteTurn, {
+  payload: LeadAgentCompleteTurnInput,
+  success: LeadAgentResponse,
+  error: Schema.Union([LeadAgentError, EnvironmentAuthorizationError]),
+});
+
+export const WsSubscribeLeadAgentRpc = Rpc.make(WS_METHODS.subscribeLeadAgent, {
+  payload: LeadAgentSubscriptionInput,
+  success: LeadAgentStreamEvent,
+  error: Schema.Union([LeadAgentError, EnvironmentAuthorizationError]),
+  stream: true,
+});
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
@@ -1072,6 +1096,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
   WsProviderUploadFeedbackRpc,
+  WsLeadAgentCompleteTurnRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
@@ -1112,6 +1137,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeLeadAgentRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,
   WsOrchestrationGetTurnDiffRpc,

@@ -157,6 +157,7 @@ import * as NativeTelemetryClient from "./resourceTelemetry/NativeTelemetryClien
 import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as LeadAgentBridge from "./riker/LeadAgentBridge.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as Data from "effect/Data";
 
@@ -429,6 +430,7 @@ const buildAppUnderTest = (options?: {
     desktopTelemetryReceiver?: Partial<
       DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"]
     >;
+    leadAgent?: Partial<LeadAgentBridge.LeadAgentBridge["Service"]>;
   };
 }) =>
   Effect.gen(function* () {
@@ -616,6 +618,14 @@ const buildAppUnderTest = (options?: {
     );
     const serviceLauncherClientLayer = ServiceLauncherClient.layer.pipe(
       Layer.provide(Layer.succeed(HostProcessEnvironment, {})),
+    );
+    const leadAgentLayer = Layer.succeed(
+      LeadAgentBridge.LeadAgentBridge,
+      LeadAgentBridge.LeadAgentBridge.of({
+        completeTurn: () => Effect.die("Lead Agent is not stubbed in this test"),
+        subscribe: () => Effect.succeed(Stream.never),
+        ...options?.layers?.leadAgent,
+      }),
     );
 
     const servedRoutesLayer = HttpRouter.serve(
@@ -982,7 +992,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(layerConfig),
     );
 
-    yield* Layer.build(appLayer);
+    yield* Layer.build(appLayer).pipe(Effect.provide(leadAgentLayer));
     return config;
   });
 
@@ -4615,6 +4625,127 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.strictEqual(error.threadId, threadId);
         assert.strictEqual(error.message, `Failed to upload feedback for thread ${threadId}.`);
         assert.isDefined(error.cause);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes the Lead Agent snapshot, events, and Owner turns over websocket rpc", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-lead-agent-websocket-",
+      });
+      const canonicalWorkspaceRoot = yield* fileSystem.realPath(workspaceRoot);
+      const requestedPaths: Array<string> = [];
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getProjectShellById: (projectId) =>
+              Effect.succeed(
+                projectId === defaultProjectId
+                  ? Option.some({
+                      id: defaultProjectId,
+                      title: "Lead Agent Project",
+                      workspaceRoot: `${workspaceRoot}/.`,
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: "2026-01-01T00:00:00.000Z",
+                      updatedAt: "2026-01-01T00:00:00.000Z",
+                    })
+                  : Option.none(),
+              ),
+          },
+          leadAgent: {
+            completeTurn: (canonicalTargetPath, content) => {
+              requestedPaths.push(canonicalTargetPath);
+              return Effect.succeed({ source: "Lead Agent", content: `Received: ${content}` });
+            },
+            subscribe: (canonicalTargetPath) => {
+              requestedPaths.push(canonicalTargetPath);
+              return Effect.succeed(
+                Stream.make(
+                  {
+                    version: 1,
+                    type: "snapshot",
+                    snapshot: {
+                      targetProjectPath: canonicalTargetPath,
+                      ownerSessionRevision: 1,
+                      leadState: "available",
+                      conversation: [],
+                    },
+                  },
+                  {
+                    version: 1,
+                    type: "event",
+                    event: { type: "lead-state", state: "responding" },
+                  },
+                ),
+              );
+            },
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all({
+            events: client[WS_METHODS.subscribeLeadAgent]({ projectId: defaultProjectId }).pipe(
+              Stream.take(2),
+              Stream.runCollect,
+              Effect.map(Array.from),
+            ),
+            response: client[WS_METHODS.leadAgentCompleteTurn]({
+              projectId: defaultProjectId,
+              content: "Continue.",
+            }),
+          }),
+        ),
+      );
+
+      assert.deepStrictEqual(result.events, [
+        {
+          version: 1,
+          type: "snapshot",
+          snapshot: {
+            targetProjectPath: canonicalWorkspaceRoot,
+            ownerSessionRevision: 1,
+            leadState: "available",
+            conversation: [],
+          },
+        },
+        {
+          version: 1,
+          type: "event",
+          event: { type: "lead-state", state: "responding" },
+        },
+      ]);
+      assert.deepStrictEqual(result.response, {
+        source: "Lead Agent",
+        content: "Received: Continue.",
+      });
+      assert.deepStrictEqual(requestedPaths, [canonicalWorkspaceRoot, canonicalWorkspaceRoot]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("returns a typed Lead Agent failure for an unavailable project", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.leadAgentCompleteTurn]({
+            projectId: defaultProjectId,
+            content: "Continue.",
+          }).pipe(Effect.flip),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "LeadAgentError");
+      if (error._tag === "LeadAgentError") {
+        assert.strictEqual(error.reason, "project-not-found");
+        assert.strictEqual(error.message, "The requested Lead Agent project is unavailable.");
       }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
