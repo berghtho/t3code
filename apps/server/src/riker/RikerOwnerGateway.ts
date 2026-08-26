@@ -98,13 +98,6 @@ export class RikerOwnerGateway extends Context.Service<
 
 const decodeOwnerGatewayMessage = Schema.decodeUnknownEffect(OwnerGatewayMessage);
 
-const gatewayError = (reason: LeadAgentFailureReason, detail: string, cause?: unknown) =>
-  new RikerOwnerGatewayError({
-    reason,
-    detail,
-    ...(cause === undefined ? {} : { cause }),
-  });
-
 export function targetProjectPathsEqual(
   requestedPath: string,
   receivedPath: string,
@@ -166,13 +159,16 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
     stderr: "pipe",
   });
   const handle = yield* Effect.acquireRelease(
-    spawner
-      .spawn(command)
-      .pipe(
-        Effect.mapError((cause) =>
-          gatewayError("spawn-failed", `Failed to start the '${executable}' Owner Gateway.`, cause),
-        ),
+    spawner.spawn(command).pipe(
+      Effect.mapError(
+        (cause) =>
+          new RikerOwnerGatewayError({
+            reason: "spawn-failed",
+            detail: `Failed to start the '${executable}' Owner Gateway.`,
+            cause,
+          }),
       ),
+    ),
     (child) => child.kill({ forceKillAfter: Duration.seconds(5) }).pipe(Effect.ignore),
   );
 
@@ -239,30 +235,35 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
 
   const processMessage = Effect.fn("RikerOwnerGateway.processMessage")(function* (raw: unknown) {
     const message = yield* decodeOwnerGatewayMessage(raw).pipe(
-      Effect.mapError((cause) =>
-        gatewayError("protocol-failed", "Riker emitted an invalid Owner Gateway record.", cause),
+      Effect.mapError(
+        (cause) =>
+          new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: "Riker emitted an invalid Owner Gateway record.",
+            cause,
+          }),
       ),
     );
     if (!receivedReady && message.type !== "ready") {
-      return yield* gatewayError(
-        "protocol-failed",
-        "Riker emitted an Owner Gateway record before becoming ready.",
-      );
+      return yield* new RikerOwnerGatewayError({
+        reason: "protocol-failed",
+        detail: "Riker emitted an Owner Gateway record before becoming ready.",
+      });
     }
 
     switch (message.type) {
       case "ready":
         if (receivedReady) {
-          return yield* gatewayError(
-            "protocol-failed",
-            "Riker emitted more than one Owner Gateway ready record.",
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: "Riker emitted more than one Owner Gateway ready record.",
+          });
         }
         if (message.protocolVersion !== OWNER_GATEWAY_PROTOCOL_VERSION) {
-          return yield* gatewayError(
-            "protocol-failed",
-            `Riker Owner Gateway protocol ${message.protocolVersion} is incompatible with expected protocol ${OWNER_GATEWAY_PROTOCOL_VERSION}.`,
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: `Riker Owner Gateway protocol ${message.protocolVersion} is incompatible with expected protocol ${OWNER_GATEWAY_PROTOCOL_VERSION}.`,
+          });
         }
         if (
           !targetProjectPathsEqual(
@@ -271,10 +272,10 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
             platform,
           )
         ) {
-          return yield* gatewayError(
-            "protocol-failed",
-            "Riker Owner Gateway ready snapshot targeted a different project.",
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: "Riker Owner Gateway ready snapshot targeted a different project.",
+          });
         }
         receivedReady = true;
         yield* Deferred.succeed(ready, message);
@@ -288,27 +289,27 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
             platform,
           )
         ) {
-          return yield* gatewayError(
-            "protocol-failed",
-            "Riker Owner Gateway conversation event targeted a different project.",
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: "Riker Owner Gateway conversation event targeted a different project.",
+          });
         }
         yield* Queue.offer(events, { _tag: "event", event: message.event });
         if (message.event.type === "exit") {
-          return yield* gatewayError(
-            "process-exited",
-            `The Riker Lead Agent exited (${message.event.exit.kind}).`,
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "process-exited",
+            detail: `The Riker Lead Agent exited (${message.event.exit.kind}).`,
+          });
         }
         return;
       case "turn-result": {
         const pending = pendingTurns.get(message.id);
         if (!pending) {
-          return yield* gatewayError(
-            "protocol-failed",
-            "Riker returned a result for an unknown Owner turn.",
-            { ownerTurnId: message.id },
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: "Riker returned a result for an unknown Owner turn.",
+            cause: { ownerTurnId: message.id },
+          });
         }
         pendingTurns.delete(message.id);
         yield* Deferred.succeed(pending, message.response);
@@ -317,22 +318,25 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
       case "turn-error": {
         const pending = pendingTurns.get(message.id);
         if (!pending) {
-          return yield* gatewayError(
-            "protocol-failed",
-            "Riker returned an error for an unknown Owner turn.",
-            { ownerTurnId: message.id },
-          );
+          return yield* new RikerOwnerGatewayError({
+            reason: "protocol-failed",
+            detail: "Riker returned an error for an unknown Owner turn.",
+            cause: { ownerTurnId: message.id },
+          });
         }
         pendingTurns.delete(message.id);
-        yield* Deferred.fail(pending, gatewayError("turn-failed", message.message));
+        yield* Deferred.fail(
+          pending,
+          new RikerOwnerGatewayError({ reason: "turn-failed", detail: message.message }),
+        );
         return;
       }
       case "protocol-error":
-        return yield* gatewayError(
-          "protocol-failed",
-          "Riker reported an Owner Gateway protocol error.",
-          { protocolMessage: message.message },
-        );
+        return yield* new RikerOwnerGatewayError({
+          reason: "protocol-failed",
+          detail: "Riker reported an Owner Gateway protocol error.",
+          cause: { protocolMessage: message.message },
+        });
     }
   });
 
@@ -348,14 +352,21 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
     Stream.runForEach(processMessage),
     Effect.flatMap(() =>
       Effect.fail(
-        gatewayError("stream-closed", "Riker closed the Owner Gateway stream unexpectedly."),
+        new RikerOwnerGatewayError({
+          reason: "stream-closed",
+          detail: "Riker closed the Owner Gateway stream unexpectedly.",
+        }),
       ),
     ),
     Effect.catch((cause) =>
       failConnection(
         isRikerOwnerGatewayError(cause)
           ? cause
-          : gatewayError("protocol-failed", "Failed to read Riker Owner Gateway output.", cause),
+          : new RikerOwnerGatewayError({
+              reason: "protocol-failed",
+              detail: "Failed to read Riker Owner Gateway output.",
+              cause,
+            }),
       ),
     ),
     Effect.forkScoped,
@@ -370,10 +381,10 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
       Option.match({
         onNone: () =>
           Effect.fail(
-            gatewayError(
-              "handshake-timeout",
-              `Riker did not become ready within ${Duration.toMillis(HANDSHAKE_TIMEOUT)}ms.`,
-            ),
+            new RikerOwnerGatewayError({
+              reason: "handshake-timeout",
+              detail: `Riker did not become ready within ${Duration.toMillis(HANDSHAKE_TIMEOUT)}ms.`,
+            }),
           ),
         onSome: Effect.succeed,
       }),
@@ -383,7 +394,10 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
 
   const completeTurn = Effect.fn("RikerOwnerGateway.completeTurn")(function* (content: string) {
     if (content.length === 0) {
-      return yield* gatewayError("turn-failed", "An Owner turn cannot be empty.");
+      return yield* new RikerOwnerGatewayError({
+        reason: "turn-failed",
+        detail: "An Owner turn cannot be empty.",
+      });
     }
     const turnNumber = yield* Ref.getAndUpdate(nextTurnNumber, (current) => current + 1);
     const id = `t3-owner-turn-${turnNumber}`;
@@ -404,8 +418,13 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
             ),
             handle.stdin,
           ).pipe(
-            Effect.mapError((cause) =>
-              gatewayError("write-failed", "Failed to send an Owner turn to Riker.", cause),
+            Effect.mapError(
+              (cause) =>
+                new RikerOwnerGatewayError({
+                  reason: "write-failed",
+                  detail: "Failed to send an Owner turn to Riker.",
+                  cause,
+                }),
             ),
             Effect.tap(() =>
               Effect.sync(() => {
