@@ -23,25 +23,27 @@ There is no reverse publication path.
 
 ## Upstream synchronization
 
-Incoming source changes are integrated selectively. Fetch `upstream`, review the incoming commits,
-and merge, rebase, or cherry-pick them onto a branch based on this fork's `main`. Resolve conflicts
-without removing or weakening Riker-specific behavior. Publish the integration branch and its pull
-request only to `berghtho/t3code`.
+Incoming source changes are integrated as a reviewed daily batch from `upstream/main`. Follow
+`docs/operations/upstream-sync.md`; do not merge source pull-request refs individually. Resolve the
+batch without removing or weakening Riker-specific behavior, then publish its integration branch and
+pull request only to `berghtho/t3code`.
 
 Before creating any remote artifact, verify the destination with `git remote -v` and an explicit
 repository argument. Pull requests target `berghtho/t3code:main`, including pull requests whose only
 purpose is to absorb source changes.
 
 Published `main` is never rebased onto the source repository. Integrate a source update on a branch
-named `upstream-sync/<date-or-version>`, test the combined product, and merge it through a fork-local
-pull request. The merge or cherry-pick history is the durable record of which source changes entered
-the product.
+named `upstream-sync/<date>`, test the combined product, and merge it through a fork-local pull
+request using merge commits. The resulting ancestry is the durable record of which source changes
+entered the product.
 
 ## Required safeguards
 
-Every working clone must make `origin` the default publication remote, make `upstream` fetch-only,
-and make `berghtho/t3code` the GitHub CLI default. Repository `main` requires a pull request and
-blocks force-pushes and deletion. Issues and discussions belong to the fork.
+Every working clone must make `origin` the default publication remote, make `upstream` fetch-only and
+limited to its `main` branch without tags, and make `berghtho/t3code` the GitHub CLI default.
+Repository `main` requires a pull request whose branch contains the current base, applies protection
+to administrators, requires resolved conversations, and blocks force-pushes and deletion. Issues and
+discussions belong to the fork.
 
 GitHub Actions is disabled at the repository level. Re-enabling any workflow requires an owner
 decision and a reviewed fork-local pull request. A production workflow additionally requires this

@@ -28,6 +28,20 @@ describe("Lead Agent contracts", () => {
     ).toThrow();
   });
 
+  it("keeps Native Harness selection behind the CMD Riker boundary", () => {
+    expect(
+      decodeCompleteTurnInput({
+        projectId: "project-1",
+        content: "Use the best available Worker Session.",
+        provider: "github",
+        nativeHarness: "copilot",
+      }),
+    ).toEqual({
+      projectId: "project-1",
+      content: "Use the best available Worker Session.",
+    });
+  });
+
   it("requires a branded project id for Lead Agent subscriptions", () => {
     expect(decodeSubscriptionInput({ projectId: " project-1 " })).toEqual({
       projectId: "project-1",

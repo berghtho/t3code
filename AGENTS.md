@@ -8,6 +8,12 @@ release operation, read `docs/internals/downstream-fork.md`. Publish branches, p
 releases only to `berghtho/t3code`; treat `pingdotgg/t3code` as a fetch-only source of selected
 incoming changes.
 
+Before starting product work on the first session of each UTC day, execute
+`docs/operations/upstream-sync.md`. Resume an open upstream-sync pull request before opening another.
+The runbook records the Owner's standing authorization for the Lead Agent to create and merge its
+fork-local pull requests when every gate passes; its stop conditions override the inherited
+pull-request defaults below.
+
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients.
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
