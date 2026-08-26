@@ -39,4 +39,17 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }).capabilities.attachmentUploads,
     ).toBe(true);
   });
+
+  it("treats a missing Lead Agent capability as unsupported under version skew", () => {
+    expect(decodeDescriptor(descriptor).capabilities.leadAgent).toBeUndefined();
+  });
+
+  it("preserves an advertised Lead Agent capability", () => {
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, leadAgent: true },
+      }).capabilities.leadAgent,
+    ).toBe(true);
+  });
 });
