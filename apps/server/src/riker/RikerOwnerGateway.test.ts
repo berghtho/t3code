@@ -377,11 +377,44 @@ describe("RikerOwnerGateway", () => {
 
         expect(firstError).toMatchObject({
           reason: "protocol-failed",
-          detail: "Malformed Owner turn.",
+          detail: "Riker reported an Owner Gateway protocol error.",
+          cause: { protocolMessage: "Malformed Owner turn." },
         });
         expect(eventError).toEqual(firstError);
         expect(secondError).toEqual(firstError);
         expect(gateway?.writes).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("keeps unknown Owner turn ids out of client-facing error detail", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let gateway: Effect.Success<ReturnType<typeof makeGatewayProcess>> | undefined;
+        const spawner = ChildProcessSpawner.make(() =>
+          Effect.gen(function* () {
+            gateway = yield* makeGatewayProcess(() => Effect.void);
+            return gateway.handle;
+          }),
+        );
+        const connection = yield* connect(targetProjectPath).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(HostProcessPlatform, "linux"),
+        );
+
+        yield* gateway!.offer({
+          type: "turn-result",
+          id: "private-owner-turn-id",
+          response: { source: "Lead Agent", content: "Unexpected response." },
+        });
+        const error = yield* connection.events.pipe(Stream.runDrain, Effect.flip);
+
+        expect(error).toMatchObject({
+          reason: "protocol-failed",
+          detail: "Riker returned a result for an unknown Owner turn.",
+          cause: { ownerTurnId: "private-owner-turn-id" },
+        });
+        expect(error.detail).not.toContain("private-owner-turn-id");
       }),
     ),
   );

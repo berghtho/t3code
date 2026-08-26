@@ -306,7 +306,8 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
         if (!pending) {
           return yield* gatewayError(
             "protocol-failed",
-            `Riker returned an unknown Owner turn id '${message.id}'.`,
+            "Riker returned a result for an unknown Owner turn.",
+            { ownerTurnId: message.id },
           );
         }
         pendingTurns.delete(message.id);
@@ -318,7 +319,8 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
         if (!pending) {
           return yield* gatewayError(
             "protocol-failed",
-            `Riker failed an unknown Owner turn id '${message.id}'.`,
+            "Riker returned an error for an unknown Owner turn.",
+            { ownerTurnId: message.id },
           );
         }
         pendingTurns.delete(message.id);
@@ -326,7 +328,11 @@ const connectWithSpawner = Effect.fn("RikerOwnerGateway.connectWithSpawner")(fun
         return;
       }
       case "protocol-error":
-        return yield* gatewayError("protocol-failed", message.message);
+        return yield* gatewayError(
+          "protocol-failed",
+          "Riker reported an Owner Gateway protocol error.",
+          { protocolMessage: message.message },
+        );
     }
   });
 
