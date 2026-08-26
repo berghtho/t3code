@@ -149,7 +149,9 @@ export const LeadAgentStreamEvent = Schema.Union([
 export type LeadAgentStreamEvent = typeof LeadAgentStreamEvent.Type;
 
 export const LeadAgentCompleteTurnInput = Schema.Struct({
-  content: Schema.String.check(Schema.isNonEmpty()),
+  content: Schema.String.check(
+    Schema.makeFilter((content) => content.trim().length > 0 || "Owner turn cannot be blank"),
+  ),
 });
 export type LeadAgentCompleteTurnInput = typeof LeadAgentCompleteTurnInput.Type;
 

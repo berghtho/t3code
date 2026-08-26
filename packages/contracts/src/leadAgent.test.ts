@@ -12,7 +12,7 @@ describe("Lead Agent contracts", () => {
     expect(decodeCompleteTurnInput({ content: "  Continue.  " })).toEqual({
       content: "  Continue.  ",
     });
-    expect(decodeCompleteTurnInput({ content: "   " })).toEqual({ content: "   " });
+    expect(() => decodeCompleteTurnInput({ content: "   " })).toThrow();
     expect(() => decodeCompleteTurnInput({ content: "" })).toThrow();
   });
 

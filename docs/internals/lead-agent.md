@@ -14,7 +14,7 @@ The wire surface is defined in `packages/contracts/src/leadAgent.ts`:
 
 - `subscribeLeadAgent` streams an initial snapshot followed by semantic events and requires
   `orchestration:read`.
-- `leadAgent.completeTurn` forwards one non-empty Owner turn without changing its content and requires
+- `leadAgent.completeTurn` forwards one non-blank Owner turn without changing its content and requires
   `orchestration:operate`.
 
 The Session View contract contains presentation-safe numbers and plain-language status only. T3 does
