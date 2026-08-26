@@ -43,10 +43,10 @@ Every working clone must make `origin` the default publication remote, make `ups
 and make `berghtho/t3code` the GitHub CLI default. Repository `main` requires a pull request and
 blocks force-pushes and deletion. Issues and discussions belong to the fork.
 
-Inherited production workflows remain disabled until this fork owns every credential, application,
-package, update channel, and deployment target they use. CI and repository-local metadata workflows
-may remain enabled. Re-enabling a production workflow requires a reviewed fork-local pull request
-and a protected GitHub environment with manual approval.
+GitHub Actions is disabled at the repository level. Re-enabling any workflow requires an owner
+decision and a reviewed fork-local pull request. A production workflow additionally requires this
+fork to own every credential, application, package, update channel, and deployment target it uses,
+plus a protected GitHub environment with manual approval.
 
 ## Release gate
 
