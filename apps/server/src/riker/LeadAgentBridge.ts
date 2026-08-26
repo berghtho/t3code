@@ -214,19 +214,10 @@ export const make = Effect.fn("LeadAgentBridge.make")(function* () {
     const entry = yield* getEntry(canonicalWorkspaceRoot);
     const current = yield* ensureConnection(entry);
     return yield* current.connection.completeTurn(content).pipe(
-      Effect.mapError(toLeadAgentError),
       Effect.tapError((error) =>
-        error.reason === "turn-failed"
-          ? Effect.void
-          : disconnect(
-              entry,
-              current.generation,
-              new RikerOwnerGateway.RikerOwnerGatewayError({
-                reason: error.reason,
-                detail: error.message,
-              }),
-            ),
+        error.reason === "turn-failed" ? Effect.void : disconnect(entry, current.generation, error),
       ),
+      Effect.mapError(toLeadAgentError),
     );
   });
 
