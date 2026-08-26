@@ -87,16 +87,16 @@ Fetch only the two canonical branches. Do not base a sync on an upstream feature
 ref.
 
 ```bash
-git fetch origin main:refs/remotes/origin/main --prune --no-tags
-git fetch upstream main:refs/remotes/upstream/main --prune --no-tags
+git fetch origin +refs/heads/main:refs/remotes/origin/main --no-tags
+git fetch upstream +refs/heads/main:refs/remotes/upstream/main --no-tags
 ```
 
 If `git rev-parse --is-shallow-repository` reports `true`, fetch the complete source ancestry once
 before making ancestry decisions:
 
 ```bash
-git fetch origin --unshallow main:refs/remotes/origin/main --no-tags
-git fetch upstream main:refs/remotes/upstream/main --no-tags
+git fetch origin --unshallow +refs/heads/main:refs/remotes/origin/main --no-tags
+git fetch upstream +refs/heads/main:refs/remotes/upstream/main --no-tags
 git rev-parse --is-shallow-repository
 git merge-base origin/main upstream/main
 ```
@@ -307,7 +307,7 @@ When every gate passes and no stop condition is present, merge with a merge comm
 branch:
 
 ```bash
-git fetch origin main:refs/remotes/origin/main --no-tags
+git fetch origin +refs/heads/main:refs/remotes/origin/main --no-tags
 git merge-base --is-ancestor origin/main HEAD
 gh pr view <number> --repo berghtho/t3code --json baseRefName,headRefName,headRefOid,headRepositoryOwner,mergeable,reviewDecision,statusCheckRollup,url
 gh pr diff <number> --repo berghtho/t3code
@@ -329,7 +329,7 @@ ancestry used to calculate the next batch.
 Fetch the merged fork head and prove both histories are present:
 
 ```bash
-git fetch origin main:refs/remotes/origin/main --no-tags
+git fetch origin +refs/heads/main:refs/remotes/origin/main --no-tags
 git merge-base --is-ancestor <recorded-upstream-sha> origin/main
 git merge-base --is-ancestor <tested-head-sha> origin/main
 gh pr view <number> --repo berghtho/t3code --json state,mergedAt,mergeCommit,url
