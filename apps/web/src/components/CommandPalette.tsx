@@ -104,6 +104,7 @@ import {
 } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { resolveLeadAgentRouteRef } from "../leadAgentRoutes";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -563,6 +564,10 @@ function OpenCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
 }) {
   const navigate = useNavigate();
+  const routeLeadAgentProjectRef = useParams({
+    strict: false,
+    select: resolveLeadAgentRouteRef,
+  });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -743,12 +748,13 @@ function OpenCommandPaletteDialog(props: {
   const projectGroupByTargetKey = useMemo(
     () =>
       new Map(
-        projectPickerEntries.map(({ group, targetProject }) => [
-          `${targetProject.environmentId}:${targetProject.id}`,
-          group,
-        ]),
+        projectGroups.flatMap((group) =>
+          group.memberProjectRefs.map(
+            (projectRef) => [`${projectRef.environmentId}:${projectRef.projectId}`, group] as const,
+          ),
+        ),
       ),
-    [projectPickerEntries],
+    [projectGroups],
   );
 
   const addProjectEnvironmentOptions = useMemo(() => {
@@ -1623,16 +1629,55 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  // There is no projects listing page; the action targets the contextual
-  // project (active thread/draft, falling back to the first sidebar group).
+  // There is no projects listing page; these actions target the project in the
+  // current Lead Agent/thread/draft route, falling back to the first group.
+  const paletteProjectRef = routeLeadAgentProjectRef ?? contextualProjectRef;
   const contextualProjectGroup =
-    (contextualProjectRef
+    (paletteProjectRef
       ? projectGroupByTargetKey.get(
-          `${contextualProjectRef.environmentId}:${contextualProjectRef.projectId}`,
+          `${paletteProjectRef.environmentId}:${paletteProjectRef.projectId}`,
         )
       : null) ??
     projectGroups[0] ??
     null;
+  const contextualLeadAgentProject =
+    (paletteProjectRef
+      ? projects.find(
+          (project) =>
+            project.environmentId === paletteProjectRef.environmentId &&
+            project.id === paletteProjectRef.projectId,
+        )
+      : null) ??
+    projectPickerEntries[0]?.targetProject ??
+    null;
+  const leadAgentEnvironment =
+    contextualLeadAgentProject === null
+      ? null
+      : (environments.find(
+          (environment) => environment.environmentId === contextualLeadAgentProject.environmentId,
+        ) ?? null);
+  if (
+    contextualLeadAgentProject &&
+    leadAgentEnvironment?.serverConfig?.environment.capabilities.leadAgent === true
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:lead-agent",
+      searchTerms: ["riker", "lead agent", "owner", "session view"],
+      title: "Open CMD Riker",
+      description: contextualProjectGroup?.displayName ?? contextualLeadAgentProject.title,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/lead-agent/$environmentId/$projectId",
+          params: {
+            environmentId: contextualLeadAgentProject.environmentId,
+            projectId: contextualLeadAgentProject.id,
+          },
+        });
+      },
+    });
+  }
   if (contextualProjectGroup) {
     actionItems.push({
       kind: "action",
