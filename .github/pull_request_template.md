@@ -1,6 +1,9 @@
 <!--
 ⚠️ READ BEFORE OPENING ⚠️
 
+This pull request must target berghtho/t3code. Riker-specific changes never flow to the source
+repository.
+
 We are not actively accepting contributions right now.
 
 You can still open a PR, but please do so knowing there is a high chance
@@ -28,6 +31,7 @@ we may close it without merging it, or never review it.
 ## Checklist
 
 - [ ] This PR is small and focused
+- [ ] This PR targets `berghtho/t3code`
 - [ ] I explained what changed and why
 - [ ] I included before/after screenshots for any UI changes
 - [ ] I included a video for animation/interaction changes

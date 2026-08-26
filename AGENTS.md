@@ -1,5 +1,13 @@
 # T3 Code
 
+## Riker fork boundary
+
+This repository is CMD Riker's independent downstream fork. This section overrides inherited
+repository-ownership and remote-target guidance below. Before any remote sync, pull request, or
+release operation, read `docs/internals/downstream-fork.md`. Publish branches, pull requests, and
+releases only to `berghtho/t3code`; treat `pingdotgg/t3code` as a fetch-only source of selected
+incoming changes.
+
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients.
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
