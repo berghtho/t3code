@@ -13,8 +13,8 @@ that owns the project. A client never supplies a workspace path.
 JSON-lines records, and owns the child process. The ready snapshot and every later conversation event
 must target the requested canonical project path. Path comparison is case-insensitive on Windows and
 case-sensitive elsewhere; slash direction and trailing directory separators are normalized. Startup
-and unexpected stream-closure failures include a bounded, commonly redacted stderr tail when Riker
-produced one.
+and unexpected stream-closure failures record a bounded, commonly redacted stderr tail in server
+diagnostics while clients receive stable error messages that do not include child-process output.
 
 `LeadAgentBridge` owns one gateway connection and single-consumer event stream per canonical project
 path, projects each latest snapshot, and fans updates out to that project's clients. Subscribers to

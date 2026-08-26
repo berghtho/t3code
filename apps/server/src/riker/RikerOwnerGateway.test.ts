@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Logger from "effect/Logger";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
@@ -223,9 +224,11 @@ describe("RikerOwnerGateway", () => {
       ),
   );
 
-  it.effect("includes bounded redacted stderr when the gateway closes during handshake", () =>
+  it.effect("logs bounded redacted stderr when the gateway closes during handshake", () =>
     Effect.scoped(
       Effect.gen(function* () {
+        const messages: string[] = [];
+        const logger = Logger.make(({ message }) => messages.push(String(message)));
         const stderrConsumed = yield* Deferred.make<void>();
         const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
         const diagnostic = `${"x".repeat(5_000)}\napi_key=super-secret\nModel configuration is invalid.`;
@@ -253,19 +256,24 @@ describe("RikerOwnerGateway", () => {
         const error = yield* connect(targetProjectPath).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HostProcessPlatform, "linux"),
+          Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
           Effect.flip,
         );
 
         expect(error.reason).toBe("stream-closed");
-        expect(error.detail).toContain("Model configuration is invalid.");
-        expect(error.detail).toContain("api_key=[redacted]");
+        expect(error.detail).toBe("Riker closed the Owner Gateway stream unexpectedly.");
+        expect(
+          messages.some((message) => message.includes("Model configuration is invalid.")),
+        ).toBe(true);
+        expect(messages.some((message) => message.includes("api_key=[redacted]"))).toBe(true);
+        expect(messages.join("\n")).not.toContain("super-secret");
         expect(error.detail).not.toContain("super-secret");
-        expect(error.detail.length).toBeLessThan(4_300);
+        expect(Math.max(...messages.map((message) => message.length))).toBeLessThan(4_300);
       }),
     ),
   );
 
-  it.effect("includes available stderr when a ready gateway stream closes", () =>
+  it.effect("does not expose available stderr when a ready gateway stream closes", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const stderrConsumed = yield* Deferred.make<void>();
@@ -314,8 +322,7 @@ describe("RikerOwnerGateway", () => {
 
         expect(error).toMatchObject({
           reason: "stream-closed",
-          detail:
-            "Riker closed the Owner Gateway stream unexpectedly.\nRiker stderr (bounded): Gateway database is locked.",
+          detail: "Riker closed the Owner Gateway stream unexpectedly.",
         });
       }),
     ),
