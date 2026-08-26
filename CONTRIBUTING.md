@@ -2,11 +2,15 @@
 
 ## Read This First
 
-We are not actively accepting contributions right now.
+This is CMD Riker's independent downstream fork of T3 Code. Issues, discussions, and pull requests
+for this product belong in `berghtho/t3code`. Do not submit Riker-specific changes to the source
+repository.
 
-You can still report a bug or open a PR, but please do so knowing there is a high chance we close it, defer it forever, or never look at it.
+We are not actively accepting unsolicited contributions right now. You can still report a bug or
+open a PR, but please do so knowing there is a high chance we close it, defer it, or never review it.
 
-Feature requests and proposals belong in [Ideas discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas), not issues.
+Feature requests and proposals belong in
+[Ideas discussions](https://github.com/berghtho/t3code/discussions/categories/ideas), not issues.
 
 If that sounds annoying, that is because it is. This project is still early and we are trying to keep scope, quality, and direction under control.
 

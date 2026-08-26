@@ -1,5 +1,11 @@
 # T3 Code
 
+> [!IMPORTANT]
+> This repository is CMD Riker's independent downstream fork of T3 Code. It is not an official T3
+> Code distribution, and Riker-specific changes are not submitted to the source repository. No Riker
+> release is currently published from this repository; inherited installation links below install
+> stock T3 Code. See [the downstream fork policy](docs/internals/downstream-fork.md).
+
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
@@ -35,7 +41,9 @@ Tip: Use `npx t3@latest --help` for the full CLI reference.
 
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+Install the latest stock T3 Code version from the
+[source repository's releases](https://github.com/pingdotgg/t3code/releases), or from your favorite
+package registry. These packages do not include Riker-specific changes:
 
 #### Windows (`winget`)
 
@@ -115,6 +123,7 @@ vp i
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
 
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+Have a feature request? Start an
+[Ideas discussion](https://github.com/berghtho/t3code/discussions/categories/ideas).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
