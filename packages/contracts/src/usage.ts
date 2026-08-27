@@ -2,10 +2,10 @@
  * Usage reporting contract.
  *
  * Each environment scans the provider CLIs' own on-disk session transcripts
- * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`) rather than
- * relying on T3 Code's own orchestration projections, so usage stays complete
- * even for turns that were never driven through T3 Code. This mirrors the
- * approach `ccusage` takes.
+ * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`,
+ * `~/.grok/sessions/**\/updates.jsonl`) rather than relying on T3 Code's own
+ * orchestration projections, so usage stays complete even for turns that were
+ * never driven through T3 Code. This mirrors the approach `ccusage` takes.
  *
  * Environments return pre-aggregated `(day, hourStart?, provider, model)`
  * buckets. Raw transcript records never cross the wire.
@@ -21,9 +21,18 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 4 as const;
+export const USAGE_CONTRACT_VERSION = 5 as const;
 
-export const UsageProviderKind = Schema.Literals(["claude", "codex"]);
+/**
+ * Oldest {@link UsageSummary} version a current client will still merge.
+ *
+ * v5 only adds `grok` to {@link UsageProviderKind}; v4 Claude/Codex buckets
+ * remain valid, so mixed-version environments keep those totals instead of
+ * treating every older server as stale.
+ */
+export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
+
+export const UsageProviderKind = Schema.Literals(["claude", "codex", "grok"]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
 /**
@@ -161,6 +170,8 @@ export const UsagePricing = Schema.Struct({
 export type UsagePricing = typeof UsagePricing.Type;
 
 export const UsageSummaryInput = Schema.Struct({
+  /** Highest response contract version the client can decode. Absent on v4 clients. */
+  supportedContractVersion: Schema.optional(NonNegativeInt),
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
   /** Inclusive last day of the window, in `timeZone`. */
@@ -192,6 +203,29 @@ export const UsageSummary = Schema.Struct({
   scanDurationMs: NonNegativeInt,
 });
 export type UsageSummary = typeof UsageSummary.Type;
+
+/**
+ * Projects a current summary to the newest wire shape an older client can decode.
+ * v4 clients do not advertise a version and cannot decode the v5 `grok` literal.
+ */
+export function usageSummaryForClient(
+  summary: UsageSummary,
+  supportedContractVersion: number | undefined,
+): UsageSummary {
+  if (
+    supportedContractVersion !== undefined &&
+    supportedContractVersion >= USAGE_CONTRACT_VERSION
+  ) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    contractVersion: USAGE_MERGE_COMPATIBLE_SINCE,
+    buckets: summary.buckets.filter((bucket) => bucket.provider !== "grok"),
+    sources: summary.sources.filter((source) => source.fingerprint.provider !== "grok"),
+  };
+}
 
 export class UsageReadError extends Schema.TaggedErrorClass<UsageReadError>()("UsageReadError", {
   reason: Schema.Literals(["scanFailed", "invalidWindow"]),
