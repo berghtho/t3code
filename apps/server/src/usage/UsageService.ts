@@ -20,6 +20,7 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
   UsageReadError,
+  usageSummaryForClient,
 } from "@t3tools/contracts";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
@@ -438,7 +439,7 @@ export const make = Effect.gen(function* () {
     const readAt = yield* DateTime.now;
     const finishedAtMs = yield* Clock.currentTimeMillis;
 
-    return {
+    const summary = {
       contractVersion: USAGE_CONTRACT_VERSION,
       readAt: DateTime.formatIso(readAt),
       timeZone: input.timeZone,
@@ -457,6 +458,8 @@ export const make = Effect.gen(function* () {
       },
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
     } satisfies UsageSummary;
+
+    return usageSummaryForClient(summary, input.supportedContractVersion);
   });
 
   return { readSummary } as const;

@@ -170,6 +170,8 @@ export const UsagePricing = Schema.Struct({
 export type UsagePricing = typeof UsagePricing.Type;
 
 export const UsageSummaryInput = Schema.Struct({
+  /** Highest response contract version the client can decode. Absent on v4 clients. */
+  supportedContractVersion: Schema.optional(NonNegativeInt),
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
   /** Inclusive last day of the window, in `timeZone`. */
@@ -201,6 +203,29 @@ export const UsageSummary = Schema.Struct({
   scanDurationMs: NonNegativeInt,
 });
 export type UsageSummary = typeof UsageSummary.Type;
+
+/**
+ * Projects a current summary to the newest wire shape an older client can decode.
+ * v4 clients do not advertise a version and cannot decode the v5 `grok` literal.
+ */
+export function usageSummaryForClient(
+  summary: UsageSummary,
+  supportedContractVersion: number | undefined,
+): UsageSummary {
+  if (
+    supportedContractVersion !== undefined &&
+    supportedContractVersion >= USAGE_CONTRACT_VERSION
+  ) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    contractVersion: USAGE_MERGE_COMPATIBLE_SINCE,
+    buckets: summary.buckets.filter((bucket) => bucket.provider !== "grok"),
+    sources: summary.sources.filter((source) => source.fingerprint.provider !== "grok"),
+  };
+}
 
 export class UsageReadError extends Schema.TaggedErrorClass<UsageReadError>()("UsageReadError", {
   reason: Schema.Literals(["scanFailed", "invalidWindow"]),
