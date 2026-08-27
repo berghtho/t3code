@@ -1,22 +1,50 @@
-# T3 Code
+# CMD Riker Desktop
 
 > [!IMPORTANT]
-> This repository is CMD Riker's independent downstream fork of T3 Code. It is not an official T3
-> Code distribution, and Riker-specific changes are not submitted to the source repository. No Riker
-> release is currently published from this repository; inherited installation links below install
-> stock T3 Code. See [the downstream fork policy](docs/internals/downstream-fork.md).
+> This is the canonical public repository for CMD Riker's independent downstream fork of T3 Code.
+> It is MIT-licensed and can be used, modified, and built independently. It is not an official T3
+> Code distribution, and Riker-specific changes remain in this fork. See
+> [the downstream fork policy](docs/internals/downstream-fork.md).
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+CMD Riker Desktop is the presentation interface for CMD Riker. It builds on T3 Code's fast,
+remote-ready clients while keeping CMD Riker authoritative for conversation, orchestration, projects,
+and agent work.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
+The fork is available for source use today. A packaged CMD Riker Desktop release has not been
+published yet; inherited `npx`, desktop, mobile, and package-manager installation links install stock
+T3 Code and do not include Riker-specific behavior.
 
-## "Wait, what are you selling me?"
+The upstream T3 Code project is an "agent harness control surface". It enables control of the agents
+on your machine with a mobile app
+([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824),
+[Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)),
+[web app](https://app.t3.codes), and [Electron-based desktop app](https://t3.codes).
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+Stock T3 Code works with Claude Code, Codex, Cursor, Grok Build, and OpenCode subscriptions. CMD
+Riker Desktop instead presents work owned and orchestrated by CMD Riker through its Lead Agent
+integration.
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+## Why T3 Code
+
+T3 Code provides a performant, remote-ready, multi-client foundation for working with coding agents.
+CMD Riker maintains this fork to preserve those strengths while building a dedicated presentation
+surface around CMD Riker's own authority and workflow model. The full source remains open so users
+can inspect it, run it, and adapt it.
 
 ## Installation
+
+### Use this fork from source
+
+CMD Riker Desktop currently runs from source. Install `vp` and the repository dependencies as
+described under [Development](#development), then start the local server and web client:
+
+```bash
+vp run dev
+```
+
+Development state is isolated under this checkout's `.t3` directory. You will also need a supported
+and authenticated provider CLI for stock T3 workflows, or a compatible CMD Riker core for
+Riker-specific integration.
 
 > [!WARNING]
 > T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
@@ -27,7 +55,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 
-### Try it out (install-free)
+### Try stock T3 Code (install-free)
 
 The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
 
@@ -73,11 +101,13 @@ yay -S t3code-nightly-bin
 
 The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
 
-## Some notes
+## Project status
 
-We are very very early in this project. Expect bugs.
+CMD Riker Desktop is early and currently intended for source use. Expect bugs and unfinished release
+surfaces.
 
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
+We are not actively accepting unsolicited contributions yet. Small, focused fixes may be considered;
+read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
 ## Documentation
 
@@ -95,7 +125,7 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 
 Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
 
-## If you REALLY want to contribute still.... read this first
+## Development
 
 ### Install `vp`
 
@@ -121,9 +151,8 @@ Checkout their getting started guide for more information: https://viteplus.dev/
 vp i
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
+Report CMD Riker Desktop bugs in this repository's
+[issue tracker](https://github.com/berghtho/t3code/issues).
 
 Have a feature request? Start an
 [Ideas discussion](https://github.com/berghtho/t3code/discussions/categories/ideas).
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
