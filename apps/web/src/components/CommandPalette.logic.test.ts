@@ -4,11 +4,14 @@ import type { Thread } from "../types";
 import {
   browseInputEndPaddingClass,
   buildBrowseGroups,
+  buildRootGroups,
   buildThreadActionItems,
   enumerateCommandPaletteItems,
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
+  normalizeSearchText,
   reduceCommandPaletteUiState,
+  resolveCommandPaletteProjectContext,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
 
@@ -169,6 +172,74 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
   };
 }
 
+describe("resolveCommandPaletteProjectContext", () => {
+  it("keeps contextual CMD Riker and setting results searchable together", () => {
+    const rikerEnvironmentId = EnvironmentId.make("environment-riker");
+    const rikerProjectId = ProjectId.make("project-riker");
+    const threadProjectId = ProjectId.make("project-thread");
+    const rikerProjectRef = { environmentId: rikerEnvironmentId, projectId: rikerProjectId };
+    const rikerProjectGroup = { displayName: "Riker project", projectKey: "riker-project" };
+    const context = resolveCommandPaletteProjectContext({
+      routeLeadAgentProjectRef: rikerProjectRef,
+      contextualProjectRef: {
+        environmentId: LOCAL_ENVIRONMENT_ID,
+        projectId: threadProjectId,
+      },
+      projectGroupByTargetKey: new Map([
+        [`${rikerEnvironmentId}:${rikerProjectId}`, rikerProjectGroup],
+      ]),
+      fallbackProjectGroup: null,
+      projects: [
+        {
+          environmentId: rikerEnvironmentId,
+          id: rikerProjectId,
+          title: "CMD Riker",
+        },
+      ],
+      fallbackLeadAgentProject: null,
+      leadAgentEnvironmentIds: [rikerEnvironmentId],
+    });
+
+    expect(context.contextualProjectGroup).toBe(rikerProjectGroup);
+    expect(context.leadAgentAction?.projectRef).toEqual(rikerProjectRef);
+    if (!context.leadAgentAction) throw new Error("Expected a Lead Agent action");
+
+    const { projectRef: _projectRef, ...leadAgentAction } = context.leadAgentAction;
+    const groups = filterCommandPaletteGroups({
+      activeGroups: buildRootGroups({
+        actionItems: [
+          {
+            ...leadAgentAction,
+            icon: null,
+            run: async () => undefined,
+          },
+        ],
+        recentThreadItems: [],
+      }),
+      query: "riker",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      settingsSearchItems: [
+        {
+          kind: "action",
+          value: "setting:riker-connection",
+          searchTerms: ["CMD Riker connection", "Integrations"],
+          title: "CMD Riker connection",
+          icon: null,
+          run: async () => undefined,
+        },
+      ],
+      threadSearchItems: [],
+    });
+
+    expect(groups.map((group) => group.value)).toEqual(["actions", "settings-search"]);
+    expect(groups.flatMap((group) => group.items.map((item) => item.value))).toEqual([
+      "action:lead-agent",
+      "setting:riker-connection",
+    ]);
+  });
+});
+
 describe("buildThreadActionItems", () => {
   it("orders threads by most recent activity and formats timestamps from updatedAt", () => {
     vi.useFakeTimers();
@@ -270,6 +341,75 @@ describe("buildThreadActionItems", () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.items.map((item) => item.value)).toEqual(["thread:project-context-only"]);
+  });
+
+  it("ranks an order-independent setting title match above a split context match", () => {
+    const settingsSearchItems = [
+      {
+        kind: "action" as const,
+        value: "setting:context-match",
+        searchTerms: ["Pairing settings", "remote backend"],
+        title: "Context match",
+        icon: null,
+        run: async () => undefined,
+      },
+      {
+        kind: "action" as const,
+        value: "setting:remote-pairing",
+        searchTerms: ["Remote pairing", "connections"],
+        title: "Remote pairing",
+        icon: null,
+        run: async () => undefined,
+      },
+    ];
+
+    const groups = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "pairing remote",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      settingsSearchItems,
+      threadSearchItems: [],
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.value).toBe("settings-search");
+    expect(groups[0]?.items.map((item) => item.value)).toEqual([
+      "setting:remote-pairing",
+      "setting:context-match",
+    ]);
+  });
+
+  it("keeps accent-insensitive setting results", () => {
+    const groups = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "thè\u{1ab0}mes",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      settingsSearchItems: [
+        {
+          kind: "action",
+          value: "setting:theme",
+          searchTerms: ["Themes", "Appearance"],
+          title: "Themes",
+          icon: null,
+          run: async () => undefined,
+        },
+      ],
+      threadSearchItems: [],
+    });
+
+    expect(groups[0]?.items.map((item) => item.value)).toEqual(["setting:theme"]);
+  });
+
+  it("normalizes case independently of the host locale", () => {
+    const localeLowerCase = vi.spyOn(String.prototype, "toLocaleLowerCase").mockReturnValue("gıt");
+    try {
+      expect(normalizeSearchText("GIT")).toBe("git");
+      expect(localeLowerCase).not.toHaveBeenCalled();
+    } finally {
+      localeLowerCase.mockRestore();
+    }
   });
 
   it("keeps message excerpts searchable without replacing thread metadata", () => {
