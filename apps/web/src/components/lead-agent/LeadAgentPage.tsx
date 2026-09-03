@@ -20,7 +20,6 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Card } from "../ui/card";
 import { SidebarInset } from "../ui/sidebar";
 import { Textarea } from "../ui/textarea";
 import ChatMarkdown from "../ChatMarkdown";
@@ -459,7 +458,10 @@ function SessionViewPanel({
           {[...sessionView.items]
             .sort((left, right) => Number(right.needsOwner) - Number(left.needsOwner))
             .map((item) => (
-              <Card key={item.number} className="gap-1 rounded-xl p-3 shadow-none">
+              <div
+                key={item.number}
+                className="relative flex flex-col gap-1 rounded-xl border bg-card not-dark:bg-clip-padding p-3 text-card-foreground shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-xs font-medium leading-snug">{item.outcome}</p>
                   <Badge size="sm" variant={item.needsOwner ? "warning" : "outline"}>
@@ -469,7 +471,7 @@ function SessionViewPanel({
                 {item.detail ? (
                   <p className="text-xs text-muted-foreground">{item.detail}</p>
                 ) : null}
-              </Card>
+              </div>
             ))}
         </PanelSection>
       ) : null}
