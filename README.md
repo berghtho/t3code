@@ -20,8 +20,8 @@ on your machine with a mobile app
 [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)),
 [web app](https://app.t3.codes), and [Electron-based desktop app](https://t3.codes).
 
-Stock T3 Code works with Claude Code, Codex, Cursor, Grok Build, and OpenCode subscriptions. CMD
-Riker Desktop instead presents work owned and orchestrated by CMD Riker through its Lead Agent
+Stock T3 Code works with Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity.
+CMD Riker Desktop instead presents work owned and orchestrated by CMD Riker through its Lead Agent
 integration.
 
 ## Why T3 Code
@@ -47,13 +47,14 @@ and authenticated provider CLI for stock T3 workflows, or a compatible CMD Riker
 Riker-specific integration.
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
+> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
 > - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
 ### Try stock T3 Code (install-free)
 
