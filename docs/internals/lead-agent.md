@@ -34,6 +34,11 @@ The wire surface is defined in `packages/contracts/src/leadAgent.ts`:
 Remote clients select their environment connection outside this RPC contract. Only the environment-
 local `projectId` crosses the WebSocket; `environmentId` and workspace paths do not.
 
+Owner turn requests run concurrently in the client. A follow-up can reach Riker while an earlier
+`leadAgent.completeTurn` request is pending. The Interrupt control sends `/interrupt` through that
+same RPC. Riker decides which Lead turn to interrupt and leaves Workers running. Each request keeps
+its own response; the conversation and Session View continue to come from the project subscription.
+
 The Session View contract contains presentation-safe numbers and plain-language status only. T3 does
 not persist or derive a competing workflow model from it, and it does not launch provider sessions or
 modify Target Project state on the Lead Agent's behalf.

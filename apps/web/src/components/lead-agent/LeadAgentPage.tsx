@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useReducer, useRef, type FormEvent, type ReactNode } from "react";
 import {
   AlertCircleIcon,
   BrainCircuitIcon,
@@ -7,6 +7,7 @@ import {
   RefreshCwIcon,
   SendHorizontalIcon,
   ShieldCheckIcon,
+  SquareIcon,
   UsersIcon,
 } from "lucide-react";
 import {
@@ -42,12 +43,78 @@ export function canOperateLeadAgent(
   );
 }
 
-export function canSubmitOwnerTurn(
-  content: string,
-  submitting: boolean,
-  canOperate: boolean,
-): boolean {
-  return canOperate && !submitting && content.trim().length > 0;
+export function canSubmitOwnerTurn(content: string, canOperate: boolean): boolean {
+  return canOperate && content.trim().length > 0;
+}
+
+interface OwnerTurnComposerState {
+  readonly draft: string;
+  readonly draftRevision: number;
+  readonly pending: ReadonlyArray<number>;
+  readonly latest: {
+    readonly id: number;
+    readonly draftRevision: number;
+    readonly content: string;
+    readonly clearDraft: boolean;
+  } | null;
+  readonly submissionError: string | null;
+}
+
+export const EMPTY_OWNER_TURN_COMPOSER: OwnerTurnComposerState = {
+  draft: "",
+  draftRevision: 0,
+  pending: [],
+  latest: null,
+  submissionError: null,
+};
+
+export function reduceOwnerTurnComposer(
+  state: OwnerTurnComposerState,
+  action:
+    | { readonly type: "edit"; readonly content: string }
+    | {
+        readonly type: "submit";
+        readonly id: number;
+        readonly content: string;
+        readonly clearDraft: boolean;
+      }
+    | { readonly type: "settle"; readonly id: number; readonly error: string | null },
+): OwnerTurnComposerState {
+  switch (action.type) {
+    case "edit":
+      return {
+        ...state,
+        draft: action.content,
+        draftRevision: state.draftRevision + 1,
+        submissionError: null,
+      };
+    case "submit":
+      return {
+        ...state,
+        draft: action.clearDraft && state.draft === action.content ? "" : state.draft,
+        pending: [...state.pending, action.id],
+        latest: {
+          id: action.id,
+          draftRevision: state.draftRevision,
+          content: action.content,
+          clearDraft: action.clearDraft,
+        },
+        submissionError: null,
+      };
+    case "settle": {
+      const latest = state.latest;
+      const current = latest?.id === action.id && latest.draftRevision === state.draftRevision;
+      return {
+        ...state,
+        draft:
+          current && action.error !== null && latest.clearDraft && state.draft === ""
+            ? latest.content
+            : state.draft,
+        pending: state.pending.filter((id) => id !== action.id),
+        submissionError: current ? action.error : state.submissionError,
+      };
+    }
+  }
 }
 
 function commandFailureMessage(failure: Parameters<typeof squashAtomCommandFailure>[0]): string {
@@ -82,27 +149,28 @@ export function LeadAgentPage({ projectRef }: { readonly projectRef: ScopedProje
   const permissionPending = environmentSession.data === null && environmentSession.isPending;
   const streamStopped = query.error !== null || query.data?.exit !== null;
   const canSendOwnerTurns = canOperate && !streamStopped;
-  const [draft, setDraft] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [composer, dispatchComposer] = useReducer(
+    reduceOwnerTurnComposer,
+    EMPTY_OWNER_TURN_COMPOSER,
+  );
+  const nextRequestId = useRef(0);
 
   const onSubmitTurn = useCallback(
-    async (content: string) => {
-      if (!canSubmitOwnerTurn(content, submitting, canSendOwnerTurns)) return;
-      setSubmitting(true);
-      setSubmissionError(null);
+    async (content: string, clearDraft = true) => {
+      if (!canSubmitOwnerTurn(content, canSendOwnerTurns)) return;
+      const id = ++nextRequestId.current;
+      dispatchComposer({ type: "submit", id, content, clearDraft });
       const result = await completeTurn({
         environmentId: projectRef.environmentId,
         input: { projectId: projectRef.projectId, content },
       });
-      setSubmitting(false);
-      if (result._tag === "Success") {
-        setDraft("");
-      } else {
-        setSubmissionError(commandFailureMessage(result));
-      }
+      dispatchComposer({
+        type: "settle",
+        id,
+        error: result._tag === "Success" ? null : commandFailureMessage(result),
+      });
     },
-    [canSendOwnerTurns, completeTurn, projectRef.environmentId, projectRef.projectId, submitting],
+    [canSendOwnerTurns, completeTurn, projectRef.environmentId, projectRef.projectId],
   );
 
   return (
@@ -112,14 +180,15 @@ export function LeadAgentPage({ projectRef }: { readonly projectRef: ScopedProje
       environmentId={projectRef.environmentId}
       state={query.data}
       streamError={query.error}
-      submissionError={submissionError}
-      draft={draft}
-      submitting={submitting}
+      submissionError={composer.submissionError}
+      draft={composer.draft}
+      submitting={composer.pending.length > 0}
       canOperate={canOperate}
       permissionPending={permissionPending}
-      onDraftChange={setDraft}
+      onDraftChange={(content) => dispatchComposer({ type: "edit", content })}
       onRetry={query.refresh}
       onSubmitTurn={onSubmitTurn}
+      onInterrupt={() => onSubmitTurn("/interrupt", false)}
     />
   );
 }
@@ -142,6 +211,7 @@ export function LeadAgentSurface(props: {
   readonly onDraftChange: (value: string) => void;
   readonly onRetry: () => void;
   readonly onSubmitTurn: (content: string) => void | Promise<void>;
+  readonly onInterrupt: () => void | Promise<void>;
 }) {
   const snapshot = props.state?.snapshot ?? null;
   const conversationEntries =
@@ -153,6 +223,7 @@ export function LeadAgentSurface(props: {
         );
   const streamStopped = props.state?.exit !== null || props.streamError !== null;
   const canSendOwnerTurns = props.canOperate && !streamStopped;
+  const responding = snapshot?.leadState === "responding" || props.submitting;
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     void props.onSubmitTurn(props.draft);
@@ -256,7 +327,7 @@ export function LeadAgentSurface(props: {
                         }
                       }}
                       placeholder="Tell Riker what outcome you need…"
-                      disabled={props.submitting || !canSendOwnerTurns}
+                      disabled={!canSendOwnerTurns}
                       aria-invalid={props.submissionError ? true : undefined}
                       aria-describedby="lead-agent-owner-turn-help"
                       className="flex-1"
@@ -264,13 +335,22 @@ export function LeadAgentSurface(props: {
                     <Button
                       type="submit"
                       size="icon-lg"
-                      disabled={
-                        !canSubmitOwnerTurn(props.draft, props.submitting, canSendOwnerTurns)
-                      }
-                      aria-label={props.submitting ? "Sending Owner turn" : "Send Owner turn"}
+                      disabled={!canSubmitOwnerTurn(props.draft, canSendOwnerTurns)}
+                      aria-label="Send Owner turn"
                     >
                       <SendHorizontalIcon aria-hidden />
                     </Button>
+                    {responding ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!canSendOwnerTurns}
+                        onClick={() => void props.onInterrupt()}
+                      >
+                        <SquareIcon aria-hidden />
+                        Interrupt
+                      </Button>
+                    ) : null}
                   </div>
                   <div className="mt-2 flex min-h-5 items-start justify-between gap-3 text-xs text-muted-foreground">
                     <span
@@ -284,10 +364,16 @@ export function LeadAgentSurface(props: {
                           : props.permissionPending
                             ? "Checking whether this session can send Owner turns."
                             : props.canOperate
-                              ? "Ctrl or Command + Enter to send"
+                              ? responding
+                                ? "Send to redirect Riker, or interrupt the Lead. Workers keep running."
+                                : "Ctrl or Command + Enter to send"
                               : "This session can observe CMD Riker but cannot send Owner turns.")}
                     </span>
-                    {snapshot.leadState === "responding" ? <span>Riker is responding</span> : null}
+                    {snapshot.leadState === "responding" ? (
+                      <span>Riker is responding</span>
+                    ) : props.submitting ? (
+                      <span>Waiting for Riker</span>
+                    ) : null}
                   </div>
                 </div>
               </form>
