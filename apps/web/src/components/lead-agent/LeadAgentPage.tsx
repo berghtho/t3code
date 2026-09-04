@@ -30,6 +30,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { useProject, useServerConfigs } from "../../state/entities";
 import { useEnvironmentSessionState } from "../../state/session";
+import { useLeadConversationScroll } from "./useLeadConversationScroll";
 
 type LeadAgentCapability = "loading" | "supported" | "unsupported";
 
@@ -224,9 +225,28 @@ export function LeadAgentSurface(props: {
   const streamStopped = props.state?.exit !== null || props.streamError !== null;
   const canSendOwnerTurns = props.canOperate && !streamStopped;
   const responding = snapshot?.leadState === "responding" || props.submitting;
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const followToEnd = useLeadConversationScroll(
+    snapshot && props.capability === "supported"
+      ? JSON.stringify([
+          props.environmentId,
+          snapshot.targetProjectPath,
+          snapshot.ownerSessionRevision,
+        ])
+      : null,
+    snapshot?.conversation,
+    viewportRef,
+    contentRef,
+  );
+  const submitTurn = () => {
+    if (!canSubmitOwnerTurn(props.draft, canSendOwnerTurns)) return;
+    followToEnd();
+    void props.onSubmitTurn(props.draft);
+  };
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void props.onSubmitTurn(props.draft);
+    submitTurn();
   };
 
   return (
@@ -266,8 +286,11 @@ export function LeadAgentSurface(props: {
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <main className="flex min-h-0 min-w-0 flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-5 py-7 sm:px-8">
+              <div ref={viewportRef} className="min-h-0 flex-1 overflow-y-auto">
+                <div
+                  ref={contentRef}
+                  className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-5 py-7 sm:px-8"
+                >
                   {props.state?.transientNotice ? (
                     <NoticeBanner content={props.state.transientNotice} />
                   ) : null}
@@ -323,7 +346,7 @@ export function LeadAgentSurface(props: {
                       onKeyDown={(event) => {
                         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                           event.preventDefault();
-                          void props.onSubmitTurn(props.draft);
+                          submitTurn();
                         }
                       }}
                       placeholder="Tell Riker what outcome you need…"
