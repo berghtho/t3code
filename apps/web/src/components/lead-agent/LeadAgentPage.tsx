@@ -1,19 +1,14 @@
-import { useCallback, useReducer, useRef, type FormEvent, type ReactNode } from "react";
+import { useCallback, useReducer, useRef, type FormEvent } from "react";
 import {
   AlertCircleIcon,
-  BrainCircuitIcon,
-  ListChecksIcon,
   MessageSquareIcon,
   RefreshCwIcon,
   SendHorizontalIcon,
-  ShieldCheckIcon,
   SquareIcon,
-  UsersIcon,
 } from "lucide-react";
 import {
   AuthOrchestrationOperateScope,
   type AuthSessionState,
-  type LeadAgentSessionView,
   type LeadAgentSnapshot,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
@@ -30,6 +25,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { useProject, useServerConfigs } from "../../state/entities";
 import { useEnvironmentSessionState } from "../../state/session";
+import { SessionViewPanel } from "./SessionViewPanel";
 import { useLeadConversationScroll } from "./useLeadConversationScroll";
 
 type LeadAgentCapability = "loading" | "supported" | "unsupported";
@@ -402,7 +398,14 @@ export function LeadAgentSurface(props: {
               </form>
             </main>
 
-            <SessionViewPanel sessionView={snapshot.sessionView} />
+            <SessionViewPanel
+              key={JSON.stringify([
+                props.environmentId,
+                snapshot.targetProjectPath,
+                snapshot.ownerSessionRevision,
+              ])}
+              sessionView={snapshot.sessionView}
+            />
           </div>
         )}
       </div>
@@ -497,189 +500,6 @@ function NoticeBanner({
         </Button>
       ) : null}
     </div>
-  );
-}
-
-function SessionViewPanel({
-  sessionView,
-}: {
-  readonly sessionView?: LeadAgentSessionView | undefined;
-}) {
-  if (!sessionView) {
-    return (
-      <aside
-        aria-label="Session View"
-        className="border-t border-border/70 p-5 lg:border-t-0 lg:border-l"
-      >
-        <p className="text-xs text-muted-foreground">Session View is not available yet.</p>
-      </aside>
-    );
-  }
-
-  const needsOwner = sessionView.items.filter((item) => item.needsOwner);
-  const activeOrders =
-    sessionView.standingOrders?.filter((order) => order.status === "active") ?? [];
-  const notices = withOccurrenceKeys(sessionView.notices, (notice) => notice);
-  const contextPercent =
-    sessionView.lead?.contextWindow && sessionView.lead.contextWindow > 0
-      ? Math.min(
-          100,
-          Math.round((sessionView.lead.contextTokens / sessionView.lead.contextWindow) * 100),
-        )
-      : null;
-
-  return (
-    <aside
-      aria-label="Session View"
-      className="min-h-0 overflow-y-auto border-t border-border/70 bg-muted/15 p-4 lg:border-t-0 lg:border-l"
-    >
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Session View
-        </h2>
-        <Badge size="sm" variant={needsOwner.length > 0 ? "warning" : "outline"}>
-          {needsOwner.length > 0 ? `${needsOwner.length} need Owner` : "Watching"}
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <Metric icon={<UsersIcon />} label="Workers" value={sessionView.activeWorkerCount} />
-        <Metric icon={<ListChecksIcon />} label="Work Items" value={sessionView.items.length} />
-        <Metric icon={<AlertCircleIcon />} label="Notices" value={sessionView.notices.length} />
-        <Metric icon={<ShieldCheckIcon />} label="Orders" value={activeOrders.length} />
-      </div>
-
-      {sessionView.notices.length > 0 ? (
-        <PanelSection title="Notices">
-          {notices.map(({ key, value: notice }) => (
-            <p
-              key={key}
-              className="rounded-lg bg-warning/8 px-2.5 py-2 text-xs text-warning-foreground"
-            >
-              {notice}
-            </p>
-          ))}
-        </PanelSection>
-      ) : null}
-
-      {sessionView.items.length > 0 ? (
-        <PanelSection title="Work Items">
-          {[...sessionView.items]
-            .sort((left, right) => Number(right.needsOwner) - Number(left.needsOwner))
-            .map((item) => (
-              <div
-                key={item.number}
-                className="relative flex flex-col gap-1 rounded-xl border bg-card not-dark:bg-clip-padding p-3 text-card-foreground shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-medium leading-snug">{item.outcome}</p>
-                  <Badge size="sm" variant={item.needsOwner ? "warning" : "outline"}>
-                    {humanize(item.status)}
-                  </Badge>
-                </div>
-                {item.detail ? (
-                  <p className="text-xs text-muted-foreground">{item.detail}</p>
-                ) : null}
-              </div>
-            ))}
-        </PanelSection>
-      ) : null}
-
-      {sessionView.workers.length > 0 ? (
-        <PanelSection title="Worker Sessions">
-          {sessionView.workers.map((worker) => (
-            <div key={worker.number} className="rounded-lg border border-border/60 px-2.5 py-2">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-xs font-medium leading-snug">{worker.label}</p>
-                <span className="text-[11px] text-muted-foreground">{humanize(worker.status)}</span>
-              </div>
-              {worker.workItemNumber ? (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Work Item {worker.workItemNumber}
-                </p>
-              ) : null}
-            </div>
-          ))}
-        </PanelSection>
-      ) : null}
-
-      {sessionView.lead ? (
-        <PanelSection title="Lead">
-          <div className="flex items-start gap-2 rounded-lg border border-border/60 px-2.5 py-2">
-            <BrainCircuitIcon aria-hidden className="mt-0.5 size-3.5 text-muted-foreground" />
-            <div className="min-w-0 text-xs">
-              <p className="truncate font-medium">{sessionView.lead.model}</p>
-              <p className="text-muted-foreground">
-                {sessionView.lead.provider}
-                {contextPercent === null ? "" : ` · ${contextPercent}% context`}
-              </p>
-            </div>
-          </div>
-        </PanelSection>
-      ) : null}
-
-      {sessionView.standingOrders && sessionView.standingOrders.length > 0 ? (
-        <PanelSection title="Standing Orders">
-          {sessionView.standingOrders.map((order) => (
-            <details
-              key={order.number}
-              className="rounded-lg border border-border/60 px-2.5 py-2 text-xs"
-            >
-              <summary className="cursor-pointer font-medium">
-                {order.title} · {humanize(order.status)}
-              </summary>
-              <p className="mt-2 text-muted-foreground">{order.instruction}</p>
-            </details>
-          ))}
-        </PanelSection>
-      ) : null}
-
-      {sessionView.sessions && sessionView.sessions.length > 0 ? (
-        <PanelSection title="Owner Sessions">
-          {sessionView.sessions.map((session) => (
-            <div key={session.number} className="flex items-center justify-between gap-2 text-xs">
-              <span className="truncate font-medium">{session.name}</span>
-              <span className="shrink-0 text-muted-foreground">
-                {session.current ? "Current" : humanize(session.state)}
-              </span>
-            </div>
-          ))}
-        </PanelSection>
-      ) : null}
-    </aside>
-  );
-}
-
-function Metric(props: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly value: number;
-}) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-background/60 p-2.5">
-      <div className="flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-        {props.icon}
-      </div>
-      <p className="mt-2 text-lg font-semibold leading-none">{props.value}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">{props.label}</p>
-    </div>
-  );
-}
-
-function PanelSection({
-  title,
-  children,
-}: {
-  readonly title: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <section className="mt-5">
-      <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-        {title}
-      </h3>
-      <div className="flex flex-col gap-2">{children}</div>
-    </section>
   );
 }
 
