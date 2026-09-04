@@ -92,7 +92,6 @@ describe("LeadAgentSurface", () => {
     expect(markup).toContain("Keep the fork current.");
     expect(markup).toContain("I’ll preserve the Riker boundary.");
     expect(markup).toContain("Session View");
-    expect(markup).toContain("Review upstream changes");
     expect(markup).toContain("Keep the downstream fork current");
     expect(markup).toContain("A decision is required.");
   });

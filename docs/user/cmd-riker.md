@@ -11,3 +11,9 @@ Scrolling up keeps your reading position. Return to the bottom or send a message
 again.
 
 Sending and interrupting require permission to operate the project and a connected Owner Gateway.
+
+The Session View keeps notices and work needing attention visible, followed by up to three current
+work items. Expand the remaining work items when needed. **Details** shows Worker Sessions, the
+Lead's Model and current Standing Orders. **History** contains completed work, past Standing Orders
+and previous sessions. Both start collapsed whenever you open a conversation. New updates preserve
+your choice. Each work item's additional details can be expanded separately.
