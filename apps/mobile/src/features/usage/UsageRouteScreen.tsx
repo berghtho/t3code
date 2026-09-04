@@ -1,4 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
+import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { DailyTotals, MergedUsage } from "@t3tools/shared/usageMerge";
 import {
   enumerateDays,
@@ -12,15 +13,19 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { useMemo, useState } from "react";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { useEnvironments } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { UsageDailyChart } from "./UsageDailyChart";
+import { UsageLimitsSection } from "./UsageLimitsSection";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors } from "./usageProviders";
 
@@ -44,6 +49,10 @@ export function UsageRouteScreen() {
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { environments: limitEnvironments } = useEnvironments();
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -80,6 +89,17 @@ export function UsageRouteScreen() {
     });
   };
   const refreshWindow = () => {
+    // Refresh subscription limits alongside transcript usage on every connected host.
+    for (const environment of limitEnvironments) {
+      if (environment.connection.phase !== "connected") continue;
+      void refreshProviders({ environmentId: environment.environmentId, input: {} }).then(
+        (result) => {
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            Alert.alert("Could not refresh limits", environment.label);
+          }
+        },
+      );
+    }
     const nextWindow = makeWindow(windowDays, undefined, isPast24Hours ? "hour" : "day");
     if (
       nextWindow.sinceDay === window.sinceDay &&
@@ -139,6 +159,7 @@ export function UsageRouteScreen() {
               timeZone={window.timeZone}
             />
             <ProviderSection merged={merged} metric={metric} />
+            <UsageLimitsSection />
             <TotalsSection merged={merged} isPast24Hours={isPast24Hours} />
             <ModelsSection merged={merged} />
           </>

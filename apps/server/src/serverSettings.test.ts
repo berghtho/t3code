@@ -6,6 +6,7 @@ import {
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
@@ -1011,6 +1012,49 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         automaticGitFetchInterval: 10_000,
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect(
+    "persists hub keys outside settings and retains them through redacted client edits",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const sourceId = UsageLimitSourceId.make("test-hub");
+        const managementKey = "synthetic-hub-management-key";
+        const next = yield* serverSettings.updateSettings({
+          usageLimitSources: {
+            [sourceId]: {
+              kind: "cliproxy",
+              url: "https://hub.example.test",
+              managementKey,
+              enabled: true,
+            },
+          },
+        });
+        assert.equal(next.usageLimitSources[sourceId]?.managementKey, managementKey);
+        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        assert.notInclude(raw, managementKey);
+        const persisted = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))(
+          raw,
+        );
+        const clientSettings = ServerSettingsModule.redactServerSettingsForClient(next);
+        const source = clientSettings.usageLimitSources[sourceId]!;
+        assert.notEqual(source.managementKey, managementKey);
+        assert.notEqual(source.managementKey, "");
+        assert.equal(persisted.usageLimitSources[sourceId]?.managementKey, source.managementKey);
+
+        const edited = yield* serverSettings.updateSettings({
+          usageLimitSources: { [sourceId]: { ...source, label: "Renamed hub" } },
+        });
+        assert.equal(edited.usageLimitSources[sourceId]?.managementKey, managementKey);
+        assert.equal(edited.usageLimitSources[sourceId]?.label, "Renamed hub");
+        assert.notInclude(
+          yield* fileSystem.readFileString(serverConfig.settingsPath),
+          managementKey,
+        );
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>
