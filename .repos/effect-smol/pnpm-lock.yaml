@@ -354,8 +354,8 @@ importers:
         specifier: ^0.2.8
         version: 0.2.8
       toml:
-        specifier: ^4.1.2
-        version: 4.1.2
+        specifier: ^4.2.0
+        version: 4.2.0
       uuid:
         specifier: ^14.0.1
         version: 14.0.1
@@ -6421,8 +6421,8 @@ packages:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
 
-  toml@4.1.2:
-    resolution: {integrity: sha512-m0vXfHODcw3gk+KONAOlVQ5yNHc3yS3B1ybM3HS1vqDoS0RWTDDVBVVTYi8hH0k+2OM1vmo9fb1WX9EVqjqfHA==}
+  toml@4.2.0:
+    resolution: {integrity: sha512-TvAJjbHZlYmI323+srtqHQFyJsoWy6mI09ppkuj9+iRsqsVKG9fvTcOP7FHF2UCb0QSYtjEavffrKzdd0XgClg==}
     engines: {node: '>=20'}
 
   totalist@3.0.1:
@@ -12640,7 +12640,7 @@ snapshots:
 
   toidentifier@1.0.1: {}
 
-  toml@4.1.2: {}
+  toml@4.2.0: {}
 
   totalist@3.0.1: {}
 
