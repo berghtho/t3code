@@ -9,7 +9,6 @@ import { Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
-  createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
@@ -78,7 +77,6 @@ export function applyLeadAgentStreamEvent(
 export function createLeadAgentEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
-  const turnScheduler = createAtomCommandScheduler();
   return {
     state: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:lead-agent:state",
@@ -89,11 +87,8 @@ export function createLeadAgentEnvironmentAtoms<R, E>(
     completeTurn: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:lead-agent:complete-turn",
       tag: WS_METHODS.leadAgentCompleteTurn,
-      scheduler: turnScheduler,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.projectId]),
-      },
+      // Owner follow-ups and interrupts must reach Riker while an earlier turn is pending.
+      concurrency: { mode: "parallel" },
     }),
   };
 }
